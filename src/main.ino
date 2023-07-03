@@ -83,7 +83,7 @@ void setup()
 
 void loop()
 {
-    digitalWrite(0, HIGH);                                  // Turn on LED when loop is active
+    digitalWrite(LED_BUILTIN, LOW);                                  // Turn on LED when loop is active
     float h1 = dht1.readHumidity() + CORRECTION_humidity_1; // Read indoor humidity and store it under "h1"
     float t1 = dht1.readTemperature() + CORRECTION_temp_1;  // Read indoor temperature and store it under "t1"
     float h2 = dht2.readHumidity() + CORRECTION_humidity_2; // Read outdoor humidity and store it under "h2"
@@ -212,9 +212,10 @@ void loop()
 
     Serial.println();
 
-    digitalWrite(LED_BUILTIN, LOW); // Turn off LED while sleeping
+    delay(100); // delay required for led to turn of 
+    digitalWrite(LED_BUILTIN, HIGH); // Turn off LED while sleeping
 
-    delay(5000);
+    delay(4900);
     ESP.wdtFeed();
 }
 
@@ -265,7 +266,6 @@ void connectWifiIfNecessary()
             while (WiFi.status() != WL_CONNECTED && waitCounter < 10)
             {
                 blinkDelay(500);
-                digitalWrite(LED_BUILTIN, HIGH);
                 Serial.print(".");
                 waitCounter++;
             }
