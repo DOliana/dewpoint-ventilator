@@ -4,7 +4,6 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <secrets.h>
-#include <settings.h>
 
 #define RELAIPIN 16 // connection for ventilator relais switch
 #define DHTPIN_1 13 // data line for DHT sensor 1 (inside)
