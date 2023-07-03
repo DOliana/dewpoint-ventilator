@@ -2,16 +2,13 @@
 #include "DHT.h"
 #include <Wire.h>
 #include <ESP8266WiFi.h>
-#include <secrets.h>
 #include <PubSubClient.h>
+#include <secrets.h>
+#include <settings.h>
 
 #define RELAIPIN 16 // connection for ventilator relais switch
 #define DHTPIN_1 13 // data line for DHT sensor 1 (inside)
-#define DHTPIN_2 14 // Datenleitung für den DHT-Sensor 2 (außen)
-
-#define RELAIS_ON LOW
-#define RELAIS_OFF HIGH
-bool ventilatorStatus;
+#define DHTPIN_2 14 // data line for DHT sensor 2 (outside)
 
 #define DHTTYPE_1 DHT22 // DHT 22
 #define DHTTYPE_2 DHT22 // DHT 22
@@ -27,6 +24,12 @@ bool ventilatorStatus;
 #define HYSTERESE 1.0   // distance from switch-on and switch-off point
 #define TEMP1_min 10.0  // minimum indoor temperature at which ventilation is activated
 #define TEMP2_min -10.0 // minimum outdoor temperature at which ventilation is activated
+
+
+// *************************** END OF SETTINGS SECTION ***************************
+#define RELAIS_ON LOW
+#define RELAIS_OFF HIGH
+bool ventilatorStatus;
 
 // ********* Wifi + MQTT settings (values defined in secret.h) ******
 const char *mqtt_server = SECRET_MQTT_SERVER;
@@ -124,8 +127,8 @@ void loop()
         while (1)
             ; // Endless loop to restart the CPU through the watchdog
     }
-    // feed the watchdog
-    ESP.wdtFeed();
+    
+    ESP.wdtFeed(); // feed the watchdog
 
     connectWifiIfNecessary();
 
