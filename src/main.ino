@@ -124,7 +124,6 @@ void loop()
 
         // set baseTopic to use for MQTT messages
 
-        String baseTopic = "";
 #ifdef SECRET_MQTT_BASETOPIC
         baseTopic = mqtt_baseTopic;
         if (baseTopic.endsWith("/") == false)
@@ -217,21 +216,33 @@ void loop()
         Serial.println(F("published to MQTT"));
     }
 
-    Serial.println();
-
     // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
     if (firstStartup)
     {
-        if (connectNTPClient())
+        if (client.connected() && connectNTPClient())
         {
-            String startupTime = timeClient.getFormattedTime();
+            time_t epochTime = timeClient.getEpochTime();
+            struct tm *ptm = gmtime((time_t *)&epochTime);
+
+            int day = ptm->tm_mday;
+            int month = ptm->tm_mon + 1;
+            int year = ptm->tm_year + 1900;
+            int hour = ptm->tm_hour;
+            int minute = ptm->tm_min;
+            int second = ptm->tm_sec;
+
+            char buffer[20];
+            sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
+            String startupTime = String(buffer);
 
             Serial.print(F("Startup time: "));
             Serial.println(startupTime);
-            client.publish((baseTopic + "startup").c_str(), startupTime.c_str());
+            client.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
             firstStartup = false;
         }
     }
+
+    Serial.println();
 
     delay(100);                      // delay required for led to turn of
     digitalWrite(LED_BUILTIN, HIGH); // Turn off LED while sleeping
@@ -242,7 +253,7 @@ void loop()
 
 float calculateDewpoint(float t, float r)
 {
-    float a, b;
+    float a = 0, b = 0;
 
     if (t >= 0)
     {
@@ -276,7 +287,7 @@ void connectWifiIfNecessary()
     // if connection is unsuccessful, try again every 20 loops
     if (WiFi.status() != WL_CONNECTED)
     {
-#ifdef SECRET_WIFI_SSID &&SECRET_WIFI_PASSWORD
+#if defined(SECRET_WIFI_SSID) && defined(SECRET_WIFI_PASSWORD)
         Serial.println(F("WiFi disconnected"));
         if (wifiErrorCounter <= 0)
         {
@@ -366,6 +377,7 @@ bool connectNTPClient()
 {
     if (WiFi.status() == WL_CONNECTED)
     {
+        Serial.println(F("Connecting to NTP server..."));
         timeClient.begin();
         int retries = 0;
         while (!timeClient.update() && retries < 10)
@@ -378,10 +390,12 @@ bool connectNTPClient()
         // if time was successfully updated, return true
         if (retries < 10)
         {
+            Serial.println(F("NTP time updated"));
             return true;
         }
         else
         {
+            Serial.println(F("NTP time update failed"));
             return false;
         }
     }
