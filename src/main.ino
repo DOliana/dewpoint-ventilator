@@ -4,6 +4,8 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <secrets.h>
+#include <NTPClient.h> // for time sync
+#include <WiFiUdp.h>   // for time sync
 
 #define RELAIPIN 16 // connection for ventilator relais switch
 #define DHTPIN_1 13 // data line for DHT sensor 1 (inside)
@@ -23,7 +25,6 @@
 #define HYSTERESE 1.0   // distance from switch-on and switch-off point
 #define TEMP1_min 10.0  // minimum indoor temperature at which ventilation is activated
 #define TEMP2_min -10.0 // minimum outdoor temperature at which ventilation is activated
-
 
 // *************************** END OF SETTINGS SECTION ***************************
 #define RELAIS_ON LOW
@@ -55,15 +56,19 @@ const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 //*******************************************************************
 
+bool errorOnInitialize = true;
+bool firstStartup = true;
 int wifiErrorCounter = 0;
+String baseTopic = "";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
+
 DHT dht1(DHTPIN_1, DHTTYPE_1); // The indoor sensor is now addressed with dht1
 DHT dht2(DHTPIN_2, DHTTYPE_2); // The outdoor sensor is now addressed with dht2
-
-bool errorOnInitialize = true;
 
 void setup()
 {
@@ -83,7 +88,8 @@ void setup()
 
 void loop()
 {
-    digitalWrite(LED_BUILTIN, LOW);                                  // Turn on LED when loop is active
+    digitalWrite(LED_BUILTIN, LOW);                         // Turn on LED when loop is active
+    connectWifiIfNecessary();                               // Connect to Wifi if not connected do this at the beginning so it can run in the background
     float h1 = dht1.readHumidity() + CORRECTION_humidity_1; // Read indoor humidity and store it under "h1"
     float t1 = dht1.readTemperature() + CORRECTION_temp_1;  // Read indoor temperature and store it under "t1"
     float h2 = dht2.readHumidity() + CORRECTION_humidity_2; // Read outdoor humidity and store it under "h2"
@@ -115,6 +121,19 @@ void loop()
         }
 
         delay(1000);
+
+        // set baseTopic to use for MQTT messages
+
+        String baseTopic = "";
+#ifdef SECRET_MQTT_BASETOPIC
+        baseTopic = mqtt_baseTopic;
+        if (baseTopic.endsWith("/") == false)
+        {
+            baseTopic.concat("/");
+        }
+#endif
+        Serial.print("MQTT base topic set: ");
+        Serial.println(baseTopic);
     }
     if (isnan(h1) || isnan(t1) || isnan(h2) || isnan(t2))
         errorOnInitialize = true;
@@ -126,10 +145,8 @@ void loop()
         while (1)
             ; // Endless loop to restart the CPU through the watchdog
     }
-    
-    ESP.wdtFeed(); // feed the watchdog
 
-    connectWifiIfNecessary();
+    ESP.wdtFeed(); // feed the watchdog
 
     //**** Print sensor values********
     Serial.print(F("Sensor-1: "));
@@ -189,16 +206,6 @@ void loop()
     // **** publish vlaues via MQTT ********
     if (client.connected())
     {
-        String baseTopic = "";
-#ifdef SECRET_MQTT_BASETOPIC
-        baseTopic = mqtt_baseTopic;
-        if (baseTopic.endsWith("/") == false)
-        {
-            baseTopic.concat("/");
-        }
-#endif
-        Serial.print("Publishing to ");
-        Serial.println(baseTopic);
         client.publish((baseTopic + "sensor-1/temperature").c_str(), String(t1, 0).c_str());
         client.publish((baseTopic + "sensor-1/humidity").c_str(), String(h1, 0).c_str());
         client.publish((baseTopic + "sensor-1/dewpoint").c_str(), String(dewPoint_1, 0).c_str());
@@ -212,7 +219,21 @@ void loop()
 
     Serial.println();
 
-    delay(100); // delay required for led to turn of 
+    // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
+    if (firstStartup)
+    {
+        if (connectNTPClient())
+        {
+            String startupTime = timeClient.getFormattedTime();
+
+            Serial.print(F("Startup time: "));
+            Serial.println(startupTime);
+            client.publish((baseTopic + "startup").c_str(), startupTime.c_str());
+            firstStartup = false;
+        }
+    }
+
+    delay(100);                      // delay required for led to turn of
     digitalWrite(LED_BUILTIN, HIGH); // Turn off LED while sleeping
 
     delay(4900);
@@ -334,6 +355,39 @@ void connectMQTTIfNecessary()
                 Serial.println(F("MQTT connection failed"));
             }
         }
+    }
+}
+
+/**
+ * This function connects to the NTP server and updates the time.
+ * It returns true if the time was successfully updated, false otherwise.
+ */
+bool connectNTPClient()
+{
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        timeClient.begin();
+        int retries = 0;
+        while (!timeClient.update() && retries < 10)
+        {
+            timeClient.forceUpdate();
+            retries++;
+            delay(500);
+        }
+
+        // if time was successfully updated, return true
+        if (retries < 10)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
     }
 }
 
