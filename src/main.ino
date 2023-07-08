@@ -7,12 +7,15 @@
 #include <NTPClient.h> // for time sync
 #include <WiFiUdp.h>   // for time sync
 
-#define RELAIPIN 16 // connection for ventilator relais switch
+#define RELAIPIN 12 // connection for ventilator relais switch
 #define DHTPIN_1 13 // data line for DHT sensor 1 (inside)
 #define DHTPIN_2 14 // data line for DHT sensor 2 (outside)
 
 #define DHTTYPE_1 DHT22 // DHT 22
 #define DHTTYPE_2 DHT22 // DHT 22
+
+#define LED_BUILTIN_RED LED_BUILTIN
+#define LED_BUILTIN_BLUE 2
 
 // ******* Correction values for individual sensor values ***********
 #define CORRECTION_temp_1 0     // correction value for indoor sensor temperature
@@ -74,8 +77,10 @@ void setup()
 {
     ESP.wdtEnable(WDTO_8S);
 
-    pinMode(LED_BUILTIN, OUTPUT);       // Define LED pin as output
-    digitalWrite(0, HIGH);              // Turn on LED to show some activity
+    pinMode(LED_BUILTIN_RED, OUTPUT);  // Define LED pin as output
+    pinMode(LED_BUILTIN_BLUE, OUTPUT); // Define LED pin as output
+
+    digitalWrite(LED_BUILTIN_RED, LOW); // Turn on LED to show we have power
     pinMode(RELAIPIN, OUTPUT);          // Define relay pin as output
     digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off relay
 
@@ -88,7 +93,7 @@ void setup()
 
 void loop()
 {
-    digitalWrite(LED_BUILTIN, LOW);                         // Turn on LED when loop is active
+    digitalWrite(LED_BUILTIN_BLUE, LOW);                    // Turn on LED when loop is active
     connectWifiIfNecessary();                               // Connect to Wifi if not connected do this at the beginning so it can run in the background
     float h1 = dht1.readHumidity() + CORRECTION_humidity_1; // Read indoor humidity and store it under "h1"
     float t1 = dht1.readTemperature() + CORRECTION_temp_1;  // Read indoor temperature and store it under "t1"
@@ -244,8 +249,8 @@ void loop()
 
     Serial.println();
 
-    delay(100);                      // delay required for led to turn of
-    digitalWrite(LED_BUILTIN, HIGH); // Turn off LED while sleeping
+    delay(100);                           // delay required for led to turn of
+    digitalWrite(LED_BUILTIN_BLUE, HIGH); // Turn off LED while sleeping
 
     delay(4900);
     ESP.wdtFeed();
@@ -410,10 +415,10 @@ void blinkDelay(int delayTime)
 {
     while (delayTime > 0)
     {
-        digitalWrite(LED_BUILTIN, HIGH); // turn on the LED
-        delay(50);                       // wait for 50ms
-        digitalWrite(LED_BUILTIN, LOW);  // turn off the LED
-        delay(50);                       // wait for 50ms
-        delayTime -= 100;                // subtract 100ms from the delay time
+        digitalWrite(LED_BUILTIN_BLUE, LOW);  // turn on the LED
+        delay(50);                            // wait for 50ms
+        digitalWrite(LED_BUILTIN_BLUE, HIGH); // turn off the LED
+        delay(50);                            // wait for 50ms
+        delayTime -= 100;                     // subtract 100ms from the delay time
     }
 }
