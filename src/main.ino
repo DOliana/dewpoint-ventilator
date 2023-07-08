@@ -66,7 +66,7 @@ int wifiErrorCounter = 0;
 String baseTopic = "";
 
 WiFiClient espClient;
-PubSubClient client(espClient);
+PubSubClient mqttClient(espClient);
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
@@ -107,6 +107,7 @@ void loop()
 {
     digitalWrite(LED_BUILTIN_BLUE, LOW);                    // Turn on LED when loop is active
     connectWifiIfNecessary();                               // Connect to Wifi if not connected do this at the beginning so it can run in the background
+    connectMQTTIfNecessary();                               // Connect to MQTT if not connected do this at the beginning so it can run in the background
     float h1 = dht1.readHumidity() + CORRECTION_humidity_1; // Read indoor humidity and store it under "h1"
     float t1 = dht1.readTemperature() + CORRECTION_temp_1;  // Read indoor temperature and store it under "t1"
     float h2 = dht2.readHumidity() + CORRECTION_humidity_2; // Read outdoor humidity and store it under "h2"
@@ -148,9 +149,12 @@ void loop()
     if (errorOnInitialize == true)
     {
         digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
-        if (client.connected())
+        
+        if (mqttClient.connected())
         {
-            client.publish((baseTopic + "/status").c_str(), ("error during initialization: " + errorString).c_str());
+            mqttClient.publish((baseTopic + "status").c_str(), ("error during initialization: " + errorString).c_str());
+            Serial.println(F("Error message sent"));
+            delay(500);
         }
         Serial.println(F("Restarting..."));
         while (1)
@@ -233,24 +237,24 @@ void loop()
     }
 
     // **** publish vlaues via MQTT ********
-    if (client.connected())
+    if (mqttClient.connected())
     {
-        client.publish((baseTopic + "sensor-1/temperature").c_str(), String(t1, 2).c_str());
-        client.publish((baseTopic + "sensor-1/humidity").c_str(), String(h1, 2).c_str());
-        client.publish((baseTopic + "sensor-1/dewpoint").c_str(), String(dewPoint_1, 2).c_str());
-        client.publish((baseTopic + "sensor-2/temperature").c_str(), String(t2, 2).c_str());
-        client.publish((baseTopic + "sensor-2/humidity").c_str(), String(h2, 2).c_str());
-        client.publish((baseTopic + "sensor-2/dewpoint").c_str(), String(dewPoint_2, 2).c_str());
-        client.publish((baseTopic + "ventilation/state").c_str(), ventilatorStatus ? "ON" : "OFF");
-        client.publish((baseTopic + "ventilation/stateNum").c_str(), ventilatorStatus ? "1" : "0");
-        client.publish((baseTopic + "ventilation/reason").c_str(), veintilatorStatusReason.c_str());
+        mqttClient.publish((baseTopic + "sensor-1/temperature").c_str(), String(t1, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-1/humidity").c_str(), String(h1, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-1/dewpoint").c_str(), String(dewPoint_1, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-2/temperature").c_str(), String(t2, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-2/humidity").c_str(), String(h2, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-2/dewpoint").c_str(), String(dewPoint_2, 2).c_str());
+        mqttClient.publish((baseTopic + "ventilation/state").c_str(), ventilatorStatus ? "ON" : "OFF");
+        mqttClient.publish((baseTopic + "ventilation/stateNum").c_str(), ventilatorStatus ? "1" : "0");
+        mqttClient.publish((baseTopic + "ventilation/reason").c_str(), veintilatorStatusReason.c_str());
         Serial.println(F("published to MQTT"));
     }
 
     // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
     if (firstStartup)
     {
-        if (client.connected() && connectNTPClient())
+        if (mqttClient.connected() && connectNTPClient())
         {
             time_t epochTime = timeClient.getEpochTime();
             struct tm *ptm = gmtime((time_t *)&epochTime);
@@ -268,7 +272,7 @@ void loop()
 
             Serial.print(F("Startup time: "));
             Serial.println(startupTime);
-            client.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
+            mqttClient.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
             firstStartup = false;
         }
     }
@@ -384,11 +388,11 @@ void connectMQTTIfNecessary()
 #endif
 
         // Check if client is connected to MQTT server, if not, connect
-        if (client.connected() == false)
+        if (mqttClient.connected() == false)
         {
             Serial.println(F("WiFi connected. Connecting to MQTT..."));
-            client.setServer(mqtt_server, mqtt_port);
-            if (client.connect(mqtt_clientID, mqtt_user, mqtt_password))
+            mqttClient.setServer(mqtt_server, mqtt_port);
+            if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
                 Serial.println(F("MQTT connected"));
             }
