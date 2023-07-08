@@ -31,8 +31,8 @@
 #define TEMP2_max 25.0  // maximum outdoor temperature at which ventilation is activated
 
 // *************************** END OF SETTINGS SECTION ***************************
-#define RELAIS_ON LOW
-#define RELAIS_OFF HIGH
+#define RELAIS_ON HIGH
+#define RELAIS_OFF LOW
 bool ventilatorStatus;
 
 // ********* Wifi + MQTT settings (values defined in secret.h) ******
@@ -105,6 +105,16 @@ void setup()
 
 void loop()
 {
+        digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
+        Serial.println(F("Ventilator off"));
+delay(2000);
+
+        digitalWrite(RELAIPIN, RELAIS_ON); // Turn on ventilator
+        Serial.println(F("Ventilator on"));
+        delay(3000);
+}
+void tst(){
+
     digitalWrite(LED_BUILTIN_BLUE, LOW);                    // Turn on LED when loop is active
     connectWifiIfNecessary();                               // Connect to Wifi if not connected do this at the beginning so it can run in the background
     connectMQTTIfNecessary();                               // Connect to MQTT if not connected do this at the beginning so it can run in the background
