@@ -28,6 +28,7 @@
 #define HYSTERESE 1.0   // distance from switch-on and switch-off point
 #define TEMP1_min 10.0  // minimum indoor temperature at which ventilation is activated
 #define TEMP2_min -10.0 // minimum outdoor temperature at which ventilation is activated
+#define TEMP2_max 25.0  // maximum outdoor temperature at which ventilation is activated
 
 // *************************** END OF SETTINGS SECTION ***************************
 #define RELAIS_ON LOW
@@ -187,14 +188,32 @@ void loop()
     float DeltaTP = dewPoint_1 - dewPoint_2;
 
     //**** decide if ventilator should run or not ********
+    String veintilatorStatusReason = "";
     if (DeltaTP > (MIN_Delta + HYSTERESE))
+    {
         ventilatorStatus = true;
+        veintilatorStatusReason = "DeltaTP > (MIN_Delta + HYSTERESE)";
+    }
     if (DeltaTP < (MIN_Delta))
+    {
         ventilatorStatus = false;
+        veintilatorStatusReason = "DeltaTP < (MIN_Delta)";
+    }
     if (t1 < TEMP1_min)
+    {
         ventilatorStatus = false;
+        veintilatorStatusReason = "t1 < TEMP1_min";
+    }
     if (t2 < TEMP2_min)
+    {
         ventilatorStatus = false;
+        veintilatorStatusReason = "t2 < TEMP2_min";
+    }
+    if (t2 > TEMP2_max)
+    {
+        ventilatorStatus = false;
+        veintilatorStatusReason = "t2 > TEMP2_max";
+    }
 
     if (ventilatorStatus == true)
     {
@@ -210,14 +229,15 @@ void loop()
     // **** publish vlaues via MQTT ********
     if (client.connected())
     {
-        client.publish((baseTopic + "sensor-1/temperature").c_str(), String(t1, 0).c_str());
-        client.publish((baseTopic + "sensor-1/humidity").c_str(), String(h1, 0).c_str());
-        client.publish((baseTopic + "sensor-1/dewpoint").c_str(), String(dewPoint_1, 0).c_str());
-        client.publish((baseTopic + "sensor-2/temperature").c_str(), String(t2, 0).c_str());
-        client.publish((baseTopic + "sensor-2/humidity").c_str(), String(h2, 0).c_str());
-        client.publish((baseTopic + "sensor-2/dewpoint").c_str(), String(dewPoint_2, 0).c_str());
+        client.publish((baseTopic + "sensor-1/temperature").c_str(), String(t1, 2).c_str());
+        client.publish((baseTopic + "sensor-1/humidity").c_str(), String(h1, 2).c_str());
+        client.publish((baseTopic + "sensor-1/dewpoint").c_str(), String(dewPoint_1, 2).c_str());
+        client.publish((baseTopic + "sensor-2/temperature").c_str(), String(t2, 2).c_str());
+        client.publish((baseTopic + "sensor-2/humidity").c_str(), String(h2, 2).c_str());
+        client.publish((baseTopic + "sensor-2/dewpoint").c_str(), String(dewPoint_2, 2).c_str());
         client.publish((baseTopic + "ventilation/state").c_str(), ventilatorStatus ? "ON" : "OFF");
         client.publish((baseTopic + "ventilation/stateNum").c_str(), ventilatorStatus ? "1" : "0");
+        client.publish((baseTopic + "ventilation/reason").c_str(), veintilatorStatusReason.c_str());
         Serial.println(F("published to MQTT"));
     }
 
