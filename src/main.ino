@@ -90,6 +90,17 @@ void setup()
 
     dht1.begin(); // Start sensors
     dht2.begin();
+
+    // set baseTopic to use for MQTT messages
+#ifdef SECRET_MQTT_BASETOPIC
+    baseTopic = mqtt_baseTopic;
+    if (baseTopic.endsWith("/") == false)
+    {
+        baseTopic.concat("/");
+    }
+#endif
+    Serial.print("MQTT base topic set: ");
+    Serial.println(baseTopic);
 }
 
 void loop()
@@ -101,12 +112,14 @@ void loop()
     float h2 = dht2.readHumidity() + CORRECTION_humidity_2; // Read outdoor humidity and store it under "h2"
     float t2 = dht2.readTemperature() + CORRECTION_temp_2;  // Read outdoor temperature and store it under "t2"
 
+    String errorString = "";
     if (errorOnInitialize == true) // Check if valid values are coming from the sensors
     {
         errorOnInitialize = false;
         if (isnan(h1) || isnan(t1) || h1 > 100 || h1 < 1 || t1 < -40 || t1 > 80)
         {
             Serial.println(F("Error reading from sensor 1."));
+            errorString.concat("Error reading from sensor 1. ");
             errorOnInitialize = true;
         }
         else
@@ -119,6 +132,7 @@ void loop()
         if (isnan(h2) || isnan(t2) || h2 > 100 || h2 < 1 || t2 < -40 || t2 > 80)
         {
             Serial.println(F("Error reading from sensor 2."));
+            errorString.concat("Error reading from sensor 2. ");
             errorOnInitialize = true;
         }
         else
@@ -127,18 +141,6 @@ void loop()
         }
 
         delay(1000);
-
-        // set baseTopic to use for MQTT messages
-
-#ifdef SECRET_MQTT_BASETOPIC
-        baseTopic = mqtt_baseTopic;
-        if (baseTopic.endsWith("/") == false)
-        {
-            baseTopic.concat("/");
-        }
-#endif
-        Serial.print("MQTT base topic set: ");
-        Serial.println(baseTopic);
     }
     if (isnan(h1) || isnan(t1) || isnan(h2) || isnan(t2))
         errorOnInitialize = true;
@@ -146,6 +148,10 @@ void loop()
     if (errorOnInitialize == true)
     {
         digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
+        if (client.connected())
+        {
+            client.publish((baseTopic + "/status").c_str(), ("error during initialization: " + errorString).c_str());
+        }
         Serial.println(F("Restarting..."));
         while (1)
             ; // Endless loop to restart the CPU through the watchdog
@@ -272,7 +278,7 @@ void loop()
     delay(100);                           // delay required for led to turn of
     digitalWrite(LED_BUILTIN_BLUE, HIGH); // Turn off LED while sleeping
 
-    delay(4900);
+    delay(29900);
     ESP.wdtFeed();
 }
 
