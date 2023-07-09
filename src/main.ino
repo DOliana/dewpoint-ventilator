@@ -8,27 +8,27 @@
 #include <WiFiUdp.h>   // for time sync
 
 #define RELAIPIN 12 // connection for ventilator relais switch
-#define DHTPIN_1 13 // data line for DHT sensor 1 (inside)
-#define DHTPIN_2 14 // data line for DHT sensor 2 (outside)
+#define DHTPIN_INSIDE 13 // data line for DHT sensor 1 (inside)
+#define DHTPIN_OUTSIDE 14 // data line for DHT sensor 2 (outside)
 
-#define DHTTYPE_1 DHT22 // DHT 22
-#define DHTTYPE_2 DHT22 // DHT 22
+#define DHTTYPE_INSIDE DHT22 // DHT 22
+#define DHTTYPE_OUTSIDE DHT22 // DHT 22
 
 #define LED_BUILTIN_RED LED_BUILTIN
 #define LED_BUILTIN_BLUE 2
 
 // ******* Correction values for individual sensor values ***********
-#define CORRECTION_temp_1 0     // correction value for indoor sensor temperature
-#define CORRECTION_temp_2 0.1   // correction value for outdoor sensor temperature
-#define CORRECTION_humidity_1 0 // correction value for indoor sensor humidity
-#define CORRECTION_humidity_2 0 // correction value for outdoor sensor humidity
+#define CORRECTION_TEMP_INSIDE 0     // correction value for indoor sensor temperature
+#define CORRECTION_TEMP_OUTSIDE 0.1   // correction value for outdoor sensor temperature
+#define CORRECTION_HUMIDITY_INSIDE 0 // correction value for indoor sensor humidity
+#define CORRECTION_HUMIDITY_OUTSIDE 0 // correction value for outdoor sensor humidity
 //*******************************************************************
 
 #define MIN_Delta 5.0   // minimum dew point difference at which the relay switches
 #define HYSTERESE 1.0   // distance from switch-on and switch-off point
-#define TEMP1_min 10.0  // minimum indoor temperature at which ventilation is activated
-#define TEMP2_min -10.0 // minimum outdoor temperature at which ventilation is activated
-#define TEMP2_max 25.0  // maximum outdoor temperature at which ventilation is activated
+#define TEMPINSIDE_MIN 10.0  // minimum indoor temperature at which ventilation is activated
+#define TEMPOUTSIDE_MIN -10.0 // minimum outdoor temperature at which ventilation is activated
+#define TEMPOUTSIDE_MAX 25.0  // maximum outdoor temperature at which ventilation is activated
 
 // *************************** END OF SETTINGS SECTION ***************************
 #define RELAIS_ON HIGH
@@ -71,8 +71,8 @@ PubSubClient mqttClient(espClient);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
 
-DHT dht1(DHTPIN_1, DHTTYPE_1); // The indoor sensor is now addressed with dht1
-DHT dht2(DHTPIN_2, DHTTYPE_2); // The outdoor sensor is now addressed with dht2
+DHT dht1(DHTPIN_INSIDE, DHTTYPE_INSIDE); // The indoor sensor is now addressed with dht1
+DHT dht2(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now addressed with dht2
 
 void setup()
 {
@@ -108,10 +108,10 @@ void loop()
     digitalWrite(LED_BUILTIN_BLUE, LOW);                    // Turn on LED when loop is active
     connectWifiIfNecessary();                               // Connect to Wifi if not connected do this at the beginning so it can run in the background
     connectMQTTIfNecessary();                               // Connect to MQTT if not connected do this at the beginning so it can run in the background
-    float h1 = dht1.readHumidity() + CORRECTION_humidity_1; // Read indoor humidity and store it under "h1"
-    float t1 = dht1.readTemperature() + CORRECTION_temp_1;  // Read indoor temperature and store it under "t1"
-    float h2 = dht2.readHumidity() + CORRECTION_humidity_2; // Read outdoor humidity and store it under "h2"
-    float t2 = dht2.readTemperature() + CORRECTION_temp_2;  // Read outdoor temperature and store it under "t2"
+    float h1 = dht1.readHumidity() + CORRECTION_HUMIDITY_INSIDE; // Read indoor humidity and store it under "h1"
+    float t1 = dht1.readTemperature() + CORRECTION_TEMP_INSIDE;  // Read indoor temperature and store it under "t1"
+    float h2 = dht2.readHumidity() + CORRECTION_HUMIDITY_OUTSIDE; // Read outdoor humidity and store it under "h2"
+    float t2 = dht2.readTemperature() + CORRECTION_TEMP_OUTSIDE;  // Read outdoor temperature and store it under "t2"
 
     String errorString = "";
     if (errorOnInitialize == true) // Check if valid values are coming from the sensors
@@ -180,22 +180,22 @@ void loop()
 
     //**** Calculate dew points********
     Serial.println(F("calculating dew point..."));
-    float dewPoint_1 = calculateDewpoint(t1, h1);
-    float dewPoint_2 = calculateDewpoint(t2, h2);
+    float dewPoint_inside = calculateDewpoint(t1, h1);
+    float dewPoint_outside = calculateDewpoint(t2, h2);
 
     //**** Print dew points********
     Serial.print(F("Sensor-1 dew point: "));
-    Serial.print(dewPoint_1);
+    Serial.print(dewPoint_inside);
     Serial.println(F("°C  "));
 
     Serial.print(F("Sensor-2 dew point: "));
-    Serial.print(dewPoint_2);
+    Serial.print(dewPoint_outside);
     Serial.println(F("°C  "));
 
     ESP.wdtFeed();
 
     //**** Calculate difference between dew points********
-    float DeltaTP = dewPoint_1 - dewPoint_2;
+    float DeltaTP = dewPoint_inside - dewPoint_outside;
 
     //**** decide if ventilator should run or not ********
     String veintilatorStatusReason = "";
@@ -209,20 +209,20 @@ void loop()
         ventilatorStatus = false;
         veintilatorStatusReason = "DeltaTP < (MIN_Delta)";
     }
-    if (t1 < TEMP1_min)
+    if (t1 < TEMPINSIDE_MIN)
     {
         ventilatorStatus = false;
-        veintilatorStatusReason = "t1 < TEMP1_min";
+        veintilatorStatusReason = "t1 < TEMPINSIDE_MIN";
     }
-    if (t2 < TEMP2_min)
+    if (t2 < TEMPOUTSIDE_MIN)
     {
         ventilatorStatus = false;
-        veintilatorStatusReason = "t2 < TEMP2_min";
+        veintilatorStatusReason = "t2 < TEMPOUTSIDE_MIN";
     }
-    if (t2 > TEMP2_max)
+    if (t2 > TEMPOUTSIDE_MAX)
     {
         ventilatorStatus = false;
-        veintilatorStatusReason = "t2 > TEMP2_max";
+        veintilatorStatusReason = "t2 > TEMPOUTSIDE_MAX";
     }
 
     if (ventilatorStatus == true)
@@ -241,10 +241,10 @@ void loop()
     {
         mqttClient.publish((baseTopic + "sensor-1/temperature").c_str(), String(t1, 2).c_str());
         mqttClient.publish((baseTopic + "sensor-1/humidity").c_str(), String(h1, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-1/dewpoint").c_str(), String(dewPoint_1, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-1/dewpoint").c_str(), String(dewPoint_inside, 2).c_str());
         mqttClient.publish((baseTopic + "sensor-2/temperature").c_str(), String(t2, 2).c_str());
         mqttClient.publish((baseTopic + "sensor-2/humidity").c_str(), String(h2, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-2/dewpoint").c_str(), String(dewPoint_2, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-2/dewpoint").c_str(), String(dewPoint_outside, 2).c_str());
         mqttClient.publish((baseTopic + "ventilation/state").c_str(), ventilatorStatus ? "ON" : "OFF");
         mqttClient.publish((baseTopic + "ventilation/stateNum").c_str(), ventilatorStatus ? "1" : "0");
         mqttClient.publish((baseTopic + "ventilation/reason").c_str(), veintilatorStatusReason.c_str());
