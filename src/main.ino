@@ -25,7 +25,7 @@
 //*******************************************************************
 
 #define MIN_Delta 5.0   // minimum dew point difference at which the relay switches
-#define HYSTERESE 1.0   // distance from switch-on and switch-off point
+#define HYSTERESIS 1.0   // distance from switch-on and switch-off point
 #define TEMPINSIDE_MIN 10.0  // minimum indoor temperature at which ventilation is activated
 #define TEMPOUTSIDE_MIN -10.0 // minimum outdoor temperature at which ventilation is activated
 #define TEMPOUTSIDE_MAX 25.0  // maximum outdoor temperature at which ventilation is activated
@@ -159,6 +159,11 @@ void loop()
         Serial.println(F("Restarting..."));
         while (1)
             ; // Endless loop to restart the CPU through the watchdog
+    } else {
+        if (mqttClient.connected())
+        {
+            mqttClient.publish((baseTopic + "status").c_str(), ("initialized").c_str());
+        }
     }
 
     ESP.wdtFeed(); // feed the watchdog
@@ -199,7 +204,7 @@ void loop()
 
     //**** decide if ventilator should run or not ********
     String veintilatorStatusReason = "";
-    if (DeltaTP > (MIN_Delta + HYSTERESE))
+    if (DeltaTP > (MIN_Delta + HYSTERESIS))
     {
         ventilatorStatus = true;
         veintilatorStatusReason = "DeltaTP > (MIN_Delta + HYSTERESE)";
