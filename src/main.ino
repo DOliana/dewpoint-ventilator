@@ -7,26 +7,26 @@
 #include <NTPClient.h> // for time sync
 #include <WiFiUdp.h>   // for time sync
 
-#define RELAIPIN 12 // connection for ventilator relais switch
-#define DHTPIN_INSIDE 13 // data line for DHT sensor 1 (inside)
+#define RELAIPIN 12       // connection for ventilator relais switch
+#define DHTPIN_INSIDE 13  // data line for DHT sensor 1 (inside)
 #define DHTPIN_OUTSIDE 14 // data line for DHT sensor 2 (outside)
 
-#define DHTTYPE_INSIDE DHT22 // DHT 22
+#define DHTTYPE_INSIDE DHT22  // DHT 22
 #define DHTTYPE_OUTSIDE DHT22 // DHT 22
 
 #define LED_BUILTIN_RED LED_BUILTIN
 #define LED_BUILTIN_BLUE 2
 
 // ******* Correction values for individual sensor values ***********
-#define CORRECTION_TEMP_INSIDE 0     // correction value for indoor sensor temperature
-#define CORRECTION_TEMP_OUTSIDE -0.5   // correction value for outdoor sensor temperature
-#define CORRECTION_HUMIDITY_INSIDE 0 // correction value for indoor sensor humidity
+#define CORRECTION_TEMP_INSIDE 0         // correction value for indoor sensor temperature
+#define CORRECTION_TEMP_OUTSIDE -0.5     // correction value for outdoor sensor temperature
+#define CORRECTION_HUMIDITY_INSIDE 0     // correction value for indoor sensor humidity
 #define CORRECTION_HUMIDITY_OUTSIDE -0.6 // correction value for outdoor sensor humidity
 //*******************************************************************
 
-#define MIN_Delta 5.0   // minimum dew point difference at which the relay switches
-#define HYSTERESIS 1.0   // distance from switch-on and switch-off point
-#define TEMPINSIDE_MIN 10.0  // minimum indoor temperature at which ventilation is activated
+#define MIN_Delta 5.0         // minimum dew point difference at which the relay switches
+#define HYSTERESIS 1.0        // distance from switch-on and switch-off point
+#define TEMPINSIDE_MIN 10.0   // minimum indoor temperature at which ventilation is activated
 #define TEMPOUTSIDE_MIN -10.0 // minimum outdoor temperature at which ventilation is activated
 #define TEMPOUTSIDE_MAX 25.0  // maximum outdoor temperature at which ventilation is activated
 
@@ -72,7 +72,7 @@ PubSubClient mqttClient(espClient);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
 
-DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE); // The indoor sensor is now addressed with dhtInside
+DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE);    // The indoor sensor is now addressed with dhtInside
 DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now addressed with dhtOutside
 
 void setup()
@@ -108,10 +108,10 @@ void setup()
 
 void loop()
 {
-    digitalWrite(LED_BUILTIN_BLUE, LOW);                    // Turn on LED when loop is active
-    connectWifiIfNecessary();                               // Connect to Wifi if not connected do this at the beginning so it can run in the background
-    connectMQTTIfNecessary();                               // Connect to MQTT if not connected do this at the beginning so it can run in the background
-    mqttClient.loop();                                      // Check for MQTT messages
+    digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
+    connectWifiIfNecessary();            // Connect to Wifi if not connected do this at the beginning so it can run in the background
+    connectMQTTIfNecessary();            // Connect to MQTT if not connected do this at the beginning so it can run in the background
+    mqttClient.loop();                   // Check for MQTT messages
     calculateAndSetVentilatorStatus();
 
     // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
@@ -142,19 +142,29 @@ void loop()
 
     Serial.println();
 
-    delay(100);                           // delay required for led to turn of
     digitalWrite(LED_BUILTIN_BLUE, HIGH); // Turn off LED while sleeping
 
-    delay(9900);
-    ESP.wdtFeed();
+    String currentRequestMode = requestedMode;
+    // if we do not call mqttclient.loop for to long, the connection will be lost
+    for (short i = 0; i < 60; i++) // sleep for 60 seconds
+    {
+        mqttClient.loop();                       // Check for MQTT messages
+        if (currentRequestMode != requestedMode) // check if the requested mode has changed
+        {
+            break;
+        }
+        delay(1000); // if this is to low, the mqtt connection will be lost
+        ESP.wdtFeed();
+    }
 }
 
-void calculateAndSetVentilatorStatus(){
+void calculateAndSetVentilatorStatus()
+{
 
-    float humidityInside = dhtInside.readHumidity() + CORRECTION_HUMIDITY_INSIDE; // Read indoor humidity and store it under "h1"
-    float tempInside = dhtInside.readTemperature() + CORRECTION_TEMP_INSIDE;  // Read indoor temperature and store it under "t1"
+    float humidityInside = dhtInside.readHumidity() + CORRECTION_HUMIDITY_INSIDE;    // Read indoor humidity and store it under "h1"
+    float tempInside = dhtInside.readTemperature() + CORRECTION_TEMP_INSIDE;         // Read indoor temperature and store it under "t1"
     float humidityOutside = dhtOutside.readHumidity() + CORRECTION_HUMIDITY_OUTSIDE; // Read outdoor humidity and store it under "h2"
-    float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;  // Read outdoor temperature and store it under "t2"
+    float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;      // Read outdoor temperature and store it under "t2"
 
     String errorString = "";
     if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
@@ -192,7 +202,7 @@ void calculateAndSetVentilatorStatus(){
     if (errorOnInitialize == true)
     {
         digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
-        
+
         if (mqttClient.connected())
         {
             mqttClient.publish((baseTopic + "status").c_str(), ("error during initialization: " + errorString).c_str());
@@ -202,7 +212,9 @@ void calculateAndSetVentilatorStatus(){
         Serial.println(F("Restarting..."));
         while (1)
             ; // Endless loop to restart the CPU through the watchdog
-    } else {
+    }
+    else
+    {
         if (mqttClient.connected())
         {
             mqttClient.publish((baseTopic + "status").c_str(), "initialized");
@@ -272,16 +284,22 @@ void calculateAndSetVentilatorStatus(){
         ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX";
     }
 
-    if(requestedMode == "AUTO") {
+    if (requestedMode == "AUTO")
+    {
         setVentilatorOn(ventilatorStatus);
-    } else if (requestedMode == "ON") {
+    }
+    else if (requestedMode == "ON")
+    {
         ventilatorStatusReason = "requestedMode == ON";
         setVentilatorOn(true);
-    } else if (requestedMode == "OFF") {
+    }
+    else if (requestedMode == "OFF")
+    {
         ventilatorStatusReason = "requestedMode == OFF";
         setVentilatorOn(false);
     }
-    if(mqttClient.connected()){
+    if (mqttClient.connected())
+    {
         mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
     }
 
@@ -299,7 +317,8 @@ void calculateAndSetVentilatorStatus(){
     }
 }
 
-void setVentilatorOn(bool running){
+void setVentilatorOn(bool running)
+{
     if (running == true)
     {
         digitalWrite(RELAIPIN, RELAIS_ON); // Turn on relay
@@ -311,7 +330,8 @@ void setVentilatorOn(bool running){
         Serial.println(F("-> ventilation OFF"));
     }
 
-    if(mqttClient.connected()){
+    if (mqttClient.connected())
+    {
         mqttClient.publish((baseTopic + "ventilation/state").c_str(), running ? "ON" : "OFF");
         mqttClient.publish((baseTopic + "ventilation/stateNum").c_str(), running ? "1" : "0");
     }
@@ -485,27 +505,36 @@ void blinkDelay(int delayTime)
     }
 }
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char *topic, byte *payload, unsigned int length)
+{
     Serial.print("Message arrived [");
     Serial.print(topic);
     Serial.print("] ");
     String payloadStr = "";
-    for (unsigned int i = 0; i < length; i++) {
+    for (unsigned int i = 0; i < length; i++)
+    {
         payloadStr += (char)payload[i];
     }
     Serial.println(payloadStr);
 
     // Switch on the LED if an 1 was received as first character
-    if (payloadStr == "AUTO") {
+    if (payloadStr == "AUTO")
+    {
         requestedMode = "AUTO";
         Serial.println("Mode set to AUTO");
-    } else if (payloadStr == "ON") {
+    }
+    else if (payloadStr == "ON")
+    {
         requestedMode = "ON";
         Serial.println("Mode set to ON");
-    } else if (payloadStr == "OFF") {
+    }
+    else if (payloadStr == "OFF")
+    {
         requestedMode = "OFF";
         Serial.println("Mode set to OFF");
-    } else {
+    }
+    else
+    {
         requestedMode = "AUTO";
         Serial.println("Unknown mode");
     }
