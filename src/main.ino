@@ -33,7 +33,6 @@
 // *************************** END OF SETTINGS SECTION ***************************
 #define RELAIS_ON HIGH
 #define RELAIS_OFF LOW
-bool ventilatorStatus;
 
 // ********* Wifi + MQTT settings (values defined in secret.h) ******
 const char *mqtt_server = SECRET_MQTT_SERVER;
@@ -58,12 +57,14 @@ const int mqtt_port = SECRET_MQTT_PORT;
 const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
+
 //*******************************************************************
 
 bool errorOnInitialize = true;
 bool firstStartup = true;
 int wifiErrorCounter = 0;
 String baseTopic = "";
+String requestedMode = "AUTO";
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
@@ -91,6 +92,8 @@ void setup()
     dhtInside.begin(); // Start sensors
     dhtOutside.begin();
 
+    mqttClient.setCallback(mqttCallback);
+
     // set baseTopic to use for MQTT messages
 #ifdef SECRET_MQTT_BASETOPIC
     baseTopic = mqtt_baseTopic;
@@ -108,13 +111,53 @@ void loop()
     digitalWrite(LED_BUILTIN_BLUE, LOW);                    // Turn on LED when loop is active
     connectWifiIfNecessary();                               // Connect to Wifi if not connected do this at the beginning so it can run in the background
     connectMQTTIfNecessary();                               // Connect to MQTT if not connected do this at the beginning so it can run in the background
+    mqttClient.loop();                                      // Check for MQTT messages
+    calculateAndSetVentilatorStatus();
+
+    // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
+    if (firstStartup)
+    {
+        if (mqttClient.connected() && connectNTPClient())
+        {
+            time_t epochTime = timeClient.getEpochTime();
+            struct tm *ptm = gmtime((time_t *)&epochTime);
+
+            int day = ptm->tm_mday;
+            int month = ptm->tm_mon + 1;
+            int year = ptm->tm_year + 1900;
+            int hour = ptm->tm_hour;
+            int minute = ptm->tm_min;
+            int second = ptm->tm_sec;
+
+            char buffer[20];
+            sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
+            String startupTime = String(buffer);
+
+            Serial.print(F("Startup time: "));
+            Serial.println(startupTime);
+            mqttClient.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
+            firstStartup = false;
+        }
+    }
+
+    Serial.println();
+
+    delay(100);                           // delay required for led to turn of
+    digitalWrite(LED_BUILTIN_BLUE, HIGH); // Turn off LED while sleeping
+
+    delay(9900);
+    ESP.wdtFeed();
+}
+
+void calculateAndSetVentilatorStatus(){
+
     float humidityInside = dhtInside.readHumidity() + CORRECTION_HUMIDITY_INSIDE; // Read indoor humidity and store it under "h1"
     float tempInside = dhtInside.readTemperature() + CORRECTION_TEMP_INSIDE;  // Read indoor temperature and store it under "t1"
     float humidityOutside = dhtOutside.readHumidity() + CORRECTION_HUMIDITY_OUTSIDE; // Read outdoor humidity and store it under "h2"
     float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;  // Read outdoor temperature and store it under "t2"
 
     String errorString = "";
-    if (errorOnInitialize == true) // Check if valid values are coming from the sensors
+    if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
     {
         errorOnInitialize = false;
         if (isnan(humidityInside) || isnan(tempInside) || humidityInside > 100 || humidityInside < 1 || tempInside < -40 || tempInside > 80)
@@ -162,7 +205,7 @@ void loop()
     } else {
         if (mqttClient.connected())
         {
-            mqttClient.publish((baseTopic + "status").c_str(), ("initialized").c_str());
+            mqttClient.publish((baseTopic + "status").c_str(), "initialized");
         }
     }
 
@@ -197,48 +240,49 @@ void loop()
     Serial.print(dewPoint_outside);
     Serial.println(F("°C  "));
 
-    ESP.wdtFeed();
-
     //**** Calculate difference between dew points********
     float DeltaTP = dewPoint_inside - dewPoint_outside;
 
     //**** decide if ventilator should run or not ********
-    String veintilatorStatusReason = "";
+    bool ventilatorStatus = false;
+    String ventilatorStatusReason = "";
     if (DeltaTP > (MIN_Delta + HYSTERESIS))
     {
         ventilatorStatus = true;
-        veintilatorStatusReason = "DeltaTP > (MIN_Delta + HYSTERESE)";
+        ventilatorStatusReason = "DeltaTP > (MIN_Delta + HYSTERESE)";
     }
     if (DeltaTP < (MIN_Delta))
     {
         ventilatorStatus = false;
-        veintilatorStatusReason = "DeltaTP < (MIN_Delta)";
+        ventilatorStatusReason = "DeltaTP < (MIN_Delta)";
     }
     if (tempInside < TEMPINSIDE_MIN)
     {
         ventilatorStatus = false;
-        veintilatorStatusReason = "tempInside < TEMPINSIDE_MIN";
+        ventilatorStatusReason = "tempInside < TEMPINSIDE_MIN";
     }
     if (tempOutside < TEMPOUTSIDE_MIN)
     {
         ventilatorStatus = false;
-        veintilatorStatusReason = "tempOutside < TEMPOUTSIDE_MIN";
+        ventilatorStatusReason = "tempOutside < TEMPOUTSIDE_MIN";
     }
     if (tempOutside > TEMPOUTSIDE_MAX)
     {
         ventilatorStatus = false;
-        veintilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX";
+        ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX";
     }
 
-    if (ventilatorStatus == true)
-    {
-        digitalWrite(RELAIPIN, RELAIS_ON); // Turn on relay
-        Serial.println(F("-> ventilation ON"));
+    if(requestedMode == "AUTO") {
+        setVentilatorOn(ventilatorStatus);
+    } else if (requestedMode == "ON") {
+        ventilatorStatusReason = "requestedMode == ON";
+        setVentilatorOn(true);
+    } else if (requestedMode == "OFF") {
+        ventilatorStatusReason = "requestedMode == OFF";
+        setVentilatorOn(false);
     }
-    else
-    {
-        digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off relay
-        Serial.println(F("-> ventilation OFF"));
+    if(mqttClient.connected()){
+        mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
     }
 
     // **** publish vlaues via MQTT ********
@@ -250,45 +294,27 @@ void loop()
         mqttClient.publish((baseTopic + "sensor-outside/temperature").c_str(), String(tempOutside, 2).c_str());
         mqttClient.publish((baseTopic + "sensor-outside/humidity").c_str(), String(humidityOutside, 2).c_str());
         mqttClient.publish((baseTopic + "sensor-outside/dewpoint").c_str(), String(dewPoint_outside, 2).c_str());
-        mqttClient.publish((baseTopic + "ventilation/state").c_str(), ventilatorStatus ? "ON" : "OFF");
-        mqttClient.publish((baseTopic + "ventilation/stateNum").c_str(), ventilatorStatus ? "1" : "0");
-        mqttClient.publish((baseTopic + "ventilation/reason").c_str(), veintilatorStatusReason.c_str());
+        mqttClient.publish((baseTopic + "ventilation/reason").c_str(), ventilatorStatusReason.c_str());
         Serial.println(F("published to MQTT"));
     }
+}
 
-    // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
-    if (firstStartup)
+void setVentilatorOn(bool running){
+    if (running == true)
     {
-        if (mqttClient.connected() && connectNTPClient())
-        {
-            time_t epochTime = timeClient.getEpochTime();
-            struct tm *ptm = gmtime((time_t *)&epochTime);
-
-            int day = ptm->tm_mday;
-            int month = ptm->tm_mon + 1;
-            int year = ptm->tm_year + 1900;
-            int hour = ptm->tm_hour;
-            int minute = ptm->tm_min;
-            int second = ptm->tm_sec;
-
-            char buffer[20];
-            sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
-            String startupTime = String(buffer);
-
-            Serial.print(F("Startup time: "));
-            Serial.println(startupTime);
-            mqttClient.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
-            firstStartup = false;
-        }
+        digitalWrite(RELAIPIN, RELAIS_ON); // Turn on relay
+        Serial.println(F("-> ventilation ON"));
+    }
+    else
+    {
+        digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off relay
+        Serial.println(F("-> ventilation OFF"));
     }
 
-    Serial.println();
-
-    delay(100);                           // delay required for led to turn of
-    digitalWrite(LED_BUILTIN_BLUE, HIGH); // Turn off LED while sleeping
-
-    delay(29900);
-    ESP.wdtFeed();
+    if(mqttClient.connected()){
+        mqttClient.publish((baseTopic + "ventilation/state").c_str(), running ? "ON" : "OFF");
+        mqttClient.publish((baseTopic + "ventilation/stateNum").c_str(), running ? "1" : "0");
+    }
 }
 
 float calculateDewpoint(float t, float r)
@@ -400,6 +426,7 @@ void connectMQTTIfNecessary()
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
                 Serial.println(F("MQTT connected"));
+                mqttClient.subscribe((baseTopic + "mode/set").c_str());
             }
             else
             {
@@ -455,5 +482,31 @@ void blinkDelay(int delayTime)
         digitalWrite(LED_BUILTIN_BLUE, HIGH); // turn off the LED
         delay(50);                            // wait for 50ms
         delayTime -= 100;                     // subtract 100ms from the delay time
+    }
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+    Serial.print("Message arrived [");
+    Serial.print(topic);
+    Serial.print("] ");
+    String payloadStr = "";
+    for (unsigned int i = 0; i < length; i++) {
+        payloadStr += (char)payload[i];
+    }
+    Serial.println(payloadStr);
+
+    // Switch on the LED if an 1 was received as first character
+    if (payloadStr == "AUTO") {
+        requestedMode = "AUTO";
+        Serial.println("Mode set to AUTO");
+    } else if (payloadStr == "ON") {
+        requestedMode = "ON";
+        Serial.println("Mode set to ON");
+    } else if (payloadStr == "OFF") {
+        requestedMode = "OFF";
+        Serial.println("Mode set to OFF");
+    } else {
+        requestedMode = "AUTO";
+        Serial.println("Unknown mode");
     }
 }
