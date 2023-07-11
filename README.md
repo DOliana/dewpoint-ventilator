@@ -46,3 +46,7 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 ### command topics
 
 - `BASETOPIC/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of ON, OFF, AUTO. This setting is not persisted across reboots and defaults to AUTO.
+
+## learnings
+
+- don't put the outside sensor close to where the ventilator is. In my case I had it about 50cm from the ventilator and as soon as the ventilator ran, the outside temperature was strongly affected by the air coming from the ventilator.
