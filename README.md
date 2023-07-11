@@ -38,14 +38,33 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 - `BASETOPIC/ventilation/sensor-inside/temperature`: Inside sensor - current temperature
 - `BASETOPIC/ventilation/sensor-inside/humidity`: Inside sensor - current humidity
 - `BASETOPIC/ventilation/sensor-inside/dewpoint`: Inside sensor - current dewpoint temperature
+
+### status topics
+
+    <!-- mqttClient.subscribe((baseTopic + "config/deltaTPmin/set").c_str());
+    mqttClient.subscribe((baseTopic + "config/hysteresis/set").c_str());
+    mqttClient.subscribe((baseTopic + "config/tempInside_min/set").c_str());
+    mqttClient.subscribe((baseTopic + "config/tempOutside_min/set").c_str());
+    mqttClient.subscribe((baseTopic + "config/tempOutside_max/set").c_str()); -->
+
 - `BASETOPIC/ventilation/reason`: Reason as string for the current state of the ventilator.
 - `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
 - `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
 - `BASETOPIC/mode`: Mode of the dewpoint ventilator. Can be ON, OFF, AUTO.
+- `BASETOPIC/config/deltaTPmin`: minimum difference between dewpoints before ventilator is turned on
+- `BASETOPIC/config/hysteresis`: distance between switch-on and switch-off point
+- `BASETOPIC/config/tempInside_min`: minimum inside temperature at which ventilation is activated
+- `BASETOPIC/config/tempOutside_min`: minimum outdoor temperature at which ventilation is activated
+- `BASETOPIC/config/tempOutside_max`: maximum outdoor temperature at which ventilation is activated
 
-### command topics
+### command (config) topics
 
 - `BASETOPIC/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of ON, OFF, AUTO. This setting is not persisted across reboots and defaults to AUTO.
+- `BASETOPIC/config/deltaTPmin/set`: minimum difference between dewpoints before ventilator is turned on
+- `BASETOPIC/config/hysteresis/set`: distance between switch-on and switch-off point
+- `BASETOPIC/config/tempInside_min/set`: minimum inside temperature at which ventilation is activated
+- `BASETOPIC/config/tempOutside_min/set`: minimum outdoor temperature at which ventilation is activated
+- `BASETOPIC/config/tempOutside_max/set`: maximum outdoor temperature at which ventilation is activated
 
 ## learnings
 
