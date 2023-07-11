@@ -17,21 +17,31 @@ sources:
 - VSCode
   - isntall `PlatformIO IDE` extension
 
+Arduino IDE should also work - hasn't been tested. The required libraries can be found in the `platformio.ini` file.
+
 ### configuration
 
 see `secrets.h ` for configuring your WiFi and MQTT server.
-see `main.ino` for configuring basic parameters for your sensors & calculation
+see `settings.h` for configuring the service (offsets, pins etc.)
+see `main.ino` for logic - there shouldn't be any changes required.
 
 ## features
 
-Publishes sensor data via MQTT and listens to commands for setting the mode (AUTO/ON/OFF).
+Publishes sensor data via MQTT and listens to commands.
 
-### telemetry
+### telemetry topics
 
+- `BASETOPIC/ventilation/sensor-outside/temperature`: Outside sensor - current temperature
+- `BASETOPIC/ventilation/sensor-outside/humidity`: Outside sensor - current humidity
+- `BASETOPIC/ventilation/sensor-outside/dewpoint`: Outside sensor - current dewpoint temperature
+- `BASETOPIC/ventilation/sensor-inside/temperature`: Inside sensor - current temperature
+- `BASETOPIC/ventilation/sensor-inside/humidity`: Inside sensor - current humidity
+- `BASETOPIC/ventilation/sensor-inside/dewpoint`: Inside sensor - current dewpoint temperature
+- `BASETOPIC/ventilation/reason`: Reason as string for the current state of the ventilator.
 - `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
 - `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
 - `BASETOPIC/mode`: Mode of the dewpoint ventilator. Can be ON, OFF, AUTO.
 
-### commands
+### command topics
 
 - `BASETOPIC/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of ON, OFF, AUTO. This setting is not persisted across reboots and defaults to AUTO.
