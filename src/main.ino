@@ -1,18 +1,16 @@
-#include <Arduino.h>
-#include "DHT.h"
-#include <Wire.h>
-#include <ESP8266WiFi.h>
-#include <PubSubClient.h>
-#include <NTPClient.h> // for time sync
-#include <WiFiUdp.h>   // for time sync
-#include <secrets.h>
-#include <settings.h>
+#include <Arduino.h>      // for Arduino functions
+#include "DHT.h"          // for DHT sensors
+#include <ESP8266WiFi.h>  // for Wifi
+#include <PubSubClient.h> // for MQTT
+#include <NTPClient.h>    // for time sync
+#include <WiFiUdp.h>      // for time sync
+#include <secrets.h>      // for Wifi and MQTT secrets
+#include <settings.h>     // for settings
 
-// *************************** END OF SETTINGS SECTION ***************************
 #define RELAIS_ON HIGH
 #define RELAIS_OFF LOW
 
-// ********* Wifi + MQTT settings (values defined in secret.h) ******
+// ********* Wifi + MQTT setup (values defined in secret.h) ******
 const char *mqtt_server = SECRET_MQTT_SERVER;
 const char *mqtt_user = SECRET_MQTT_USER;
 const char *mqtt_password = SECRET_MQTT_PASSWORD;
@@ -48,7 +46,7 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
+NTPClient timeClient(ntpUDP, TIME_SERVER, 3600, 60000);
 
 DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE);    // The indoor sensor is now addressed with dhtInside
 DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now addressed with dhtOutside
@@ -89,7 +87,6 @@ void loop()
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectWifiIfNecessary();            // Connect to Wifi if not connected do this at the beginning so it can run in the background
     connectMQTTIfNecessary();            // Connect to MQTT if not connected do this at the beginning so it can run in the background
-    mqttClient.loop();                   // Check for MQTT messages
     calculateAndSetVentilatorStatus();
 
     // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
@@ -117,18 +114,17 @@ void loop()
             firstStartup = false;
         }
     }
-
+    
     Serial.println();
-
     digitalWrite(LED_BUILTIN_BLUE, HIGH); // Turn off LED while sleeping
 
     String currentRequestMode = requestedMode;
     // if we do not call mqttclient.loop for to long, the connection will be lost
     for (short i = 0; i < 60; i++) // sleep for 60 seconds
     {
-        mqttClient.loop();                       // Check for MQTT messages
+        mqttClient.loop(); // Check for MQTT messages
         // if an MQTT command was received, stop sleeping and process the command
-        if (currentRequestMode != requestedMode) // right now this is the only MQTT command supported. 
+        if (currentRequestMode != requestedMode) // right now this is the only MQTT command supported.
         {
             break;
         }
