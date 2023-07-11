@@ -5,3 +5,4 @@
 .vscode/ipch
 dewpoint-vent.code-workspace
 src/secrets.h
+src/settings.h
