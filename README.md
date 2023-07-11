@@ -21,9 +21,10 @@ Arduino IDE should also work - hasn't been tested. The required libraries can be
 
 ### configuration
 
-see `secrets.h ` for configuring your WiFi and MQTT server.
-see `settings.h` for configuring the service (offsets, pins etc.)
-see `main.ino` for logic - there shouldn't be any changes required.
+configuration is mainly done in separate header files:
+
+- see `secrets.h ` for configuring your WiFi and MQTT server.
+- see `settings.h` for configuring the service (offsets, pins etc.)
 
 ## features
 
