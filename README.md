@@ -23,12 +23,12 @@ Arduino IDE should also work - hasn't been tested. The required libraries can be
 
 configuration is mainly done in separate header files:
 
-- see `secrets.h ` for configuring your WiFi and MQTT server.
-- see `settings.h` for configuring the service (offsets, pins etc.)
+- see `src/secrets.h ` for configuring your WiFi and MQTT server.
+- see `src/settings.h` for configuring the service (offsets, pins etc.)
 
 ## features
 
-Publishes sensor data via MQTT and listens to commands.
+Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set in `settings.h` - if not set it will be omitted.)
 
 ### telemetry topics
 
