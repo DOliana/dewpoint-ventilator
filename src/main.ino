@@ -1,24 +1,20 @@
 #include <Arduino.h>      // for Arduino functions
 #include "DHT.h"          // for DHT sensors
-#include <ESP8266WiFi.h>  // for Wifi
+#include <ESP8266WiFi.h>  // for WiFi
 #include <PubSubClient.h> // for MQTT
 #include <NTPClient.h>    // for time sync
 #include <WiFiUdp.h>      // for time sync
-#include <secrets.h>      // for Wifi and MQTT secrets
+#include <secrets.h>      // for WiFi and MQTT secrets
 #include <settings.h>     // for settings
 
-#define RELAIS_ON HIGH
-#define RELAIS_OFF LOW
+#define RELAIS_ON HIGH // define the relais on value
+#define RELAIS_OFF LOW // define the relais off value
 
-// ********* Wifi + MQTT setup (values defined in secret.h) ******
+// ********* WiFi + MQTT setup (values defined in secret.h) ******
 const char *mqtt_server = SECRET_MQTT_SERVER;
 const char *mqtt_user = SECRET_MQTT_USER;
 const char *mqtt_password = SECRET_MQTT_PASSWORD;
-#ifdef SECRET_MQTT_BASETOPIC
-const char *mqtt_baseTopic = SECRET_MQTT_BASETOPIC;
-#else
-const char *mqtt_baseTopic = "";
-#endif
+
 #ifdef SECRET_MQTT_CLIENT_ID
 const char *mqtt_clientID = SECRET_MQTT_CLIENT_ID;
 #else
@@ -34,19 +30,18 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-bool errorOnInitialize = true;
-bool firstStartup = true;
-int wifiErrorCounter = 0;
-bool ventilatorStatus = false; // needs to be a global variable, so the state is saved across loops
-String baseTopic = "";
-String requestedMode = "AUTO"; // default mode after reboot is AUTO
-int min_delta = MIN_Delta;
-int hysteresis = HYSTERESIS;
-int tempInside_min = TEMPINSIDE_MIN;
-int tempOutside_min = TEMPOUTSIDE_MIN;
-int tempOutside_max = TEMPOUTSIDE_MAX;
-
-bool mqttCommandReceived = false;
+bool errorOnInitialize = true;         // used to prevent the microcontroller from freezing when the DHT sensors are not initialized correctly
+String startupTime;                    // startup time - if set its been sent. Used to prevent sending the startup message multiple times
+bool ventilatorStatus = false;         // needs to be a global variable, so the state is saved across loops
+String baseTopic = "";                 // used to store the MQTT base topic
+String requestedMode = "AUTO";         // default mode after reboot is AUTO
+int min_delta = MIN_Delta;             // minimum difference between the dew points inside and outside to turn on the ventilator
+int hysteresis = HYSTERESIS;           // hysteresis for turning off the ventilator
+int tempInside_min = TEMPINSIDE_MIN;   // minimum temperature inside to turn on the ventilator
+int tempOutside_min = TEMPOUTSIDE_MIN; // minimum temperature outside to turn on the ventilator
+int tempOutside_max = TEMPOUTSIDE_MAX; // maximum temperature outside to turn on the ventilator
+bool mqttCommandReceived = false;      // used to check if a MQTT command has been received and handle them immediately
+WiFiEventHandler wifiConnectHandler;
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
@@ -72,27 +67,29 @@ DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now ad
  */
 void setup()
 {
-    ESP.wdtEnable(WDTO_8S);
+    ESP.wdtEnable(WDTO_8S); // Enable watchdog timer to prevent the microcontroller from freezing with a timeout of 8 seconds
 
     pinMode(LED_BUILTIN_RED, OUTPUT);  // Define LED pin as output
     pinMode(LED_BUILTIN_BLUE, OUTPUT); // Define LED pin as output
+    pinMode(RELAIPIN, OUTPUT);         // Define relay pin as output
 
     digitalWrite(LED_BUILTIN_RED, LOW); // Turn on LED to show we have power
-    pinMode(RELAIPIN, OUTPUT);          // Define relay pin as output
 
-    Serial.begin(115200);
+    Serial.begin(115200); // Start serial communication
 
-    setVentilatorOn(false); // Turn off ventilator
+    setVentilatorOn(ventilatorStatus); // Turn off ventilator
+    initializeWiFi();                  // Initialize WiFi connection
+
     Serial.println(F("Testing sensors..."));
 
-    dhtInside.begin(); // Start sensors
-    dhtOutside.begin();
+    dhtInside.begin();  // Start indoor sensor
+    dhtOutside.begin(); // Start outdoor sensor
 
     mqttClient.setCallback(mqttCallback);
 
     // set baseTopic to use for MQTT messages
 #ifdef SECRET_MQTT_BASETOPIC
-    baseTopic = mqtt_baseTopic;
+    baseTopic = SECRET_MQTT_BASETOPIC; // set baseTopic to use for MQTT messages
     if (baseTopic.endsWith("/") == false)
     {
         baseTopic.concat("/");
@@ -117,36 +114,9 @@ void setup()
 void loop()
 {
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
-    connectWifiIfNecessary();            // Connect to Wifi if not connected do this at the beginning so it can run in the background
-    connectMQTTIfNecessary();            // Connect to MQTT if not connected do this at the beginning so it can run in the background
+    connectMQTTIfDisconnected();         // Connect to MQTT if not connected do this at the beginning so it can run in the background
     publishConfig();
     calculateAndSetVentilatorStatus();
-
-    // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
-    if (firstStartup)
-    {
-        if (mqttClient.connected() && connectNTPClient())
-        {
-            time_t epochTime = timeClient.getEpochTime();
-            struct tm *ptm = gmtime((time_t *)&epochTime);
-
-            int day = ptm->tm_mday;
-            int month = ptm->tm_mon + 1;
-            int year = ptm->tm_year + 1900;
-            int hour = ptm->tm_hour;
-            int minute = ptm->tm_min;
-            int second = ptm->tm_sec;
-
-            char buffer[20];
-            sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
-            String startupTime = String(buffer);
-
-            Serial.print(F("Startup time: "));
-            Serial.println(startupTime);
-            mqttClient.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
-            firstStartup = false;
-        }
-    }
 
     Serial.println();
     digitalWrite(LED_BUILTIN_BLUE, HIGH); // Turn off LED while sleeping
@@ -392,58 +362,55 @@ float calculateDewpoint(float t, float r)
 }
 
 /**
- * This function checks if the WiFi is connected and tries to connect if it is not.
- * If the connection is unsuccessful, it will retry every 20 loops.
- * This function should be called periodically to ensure that the device stays connected to WiFi.
+ * Initializes the WiFi connection by setting the hostname, enabling auto-reconnect, and storing the configuration in flash memory.
+ * If the WiFi is already connected, it will disconnect and forget the settings before attempting to reconnect.
+ *
+ * @return void
  */
-void connectWifiIfNecessary()
+void initializeWiFi()
 {
-    // if connection is unsuccessful, try again every 20 loops
+    Serial.println(F("connecting to WiFi..."));
+
+    wifiConnectHandler = WiFi.onStationModeGotIP(onWiFiConnect);
+    WiFi.setHostname(wifi_hostname); // Set WiFi hostname.
+    WiFi.setAutoReconnect(true);     // Auto reconnect WiFi when connection lost.
+    WiFi.persistent(true);           // Store WiFi configuration in flash memory.
+
+#if defined(SECRET_WIFI_SSID) && defined(SECRET_WIFI_PASSWORD)
+    WiFi.begin(ssid, password);
+    short waitCounter = 10; // wait max 5 seconds for connection
+    while (WiFi.status() != WL_CONNECTED && waitCounter >= 0)
+    {
+        sleepAndBlink(500);
+        Serial.print(".");
+        waitCounter--;
+    }
+
     if (WiFi.status() != WL_CONNECTED)
     {
-#if defined(SECRET_WIFI_SSID) && defined(SECRET_WIFI_PASSWORD)
-        Serial.println(F("WiFi disconnected"));
-        if (wifiErrorCounter <= 0)
-        {
-            Serial.println(F("connecting to WiFi..."));
-            WiFi.setHostname(wifi_hostname);
-            WiFi.begin(ssid, password);
-            int waitCounter = 0;
-            while (WiFi.status() != WL_CONNECTED && waitCounter < 10)
-            {
-                sleepAndBlink(500);
-                Serial.print(".");
-                waitCounter++;
-            }
-
-            if (WiFi.status() != WL_CONNECTED)
-            {
-                Serial.println(F("WiFi connection failed"));
-                wifiErrorCounter = 20;
-            }
-            else
-            {
-                Serial.println(F("WiFi connected"));
-                connectMQTTIfNecessary();
-            }
-        }
-        else
-        {
-            wifiErrorCounter--;
-            Serial.print("retrying wifi connection in ");
-            Serial.print(wifiErrorCounter);
-            Serial.println(" loops");
-        }
-#else
-        Serial.println("WiFi not configured");
-#endif
+        Serial.println(F("WiFi connection failed - retrying in the background"));
     }
     else
     {
-        // wifi connection continues even if we don't wait for it - we need to check periodically
-        // even if WiFi connection failed in the first place.
-        connectMQTTIfNecessary();
+        Serial.println(F("WiFi connected"));
     }
+#else
+    Serial.println("WiFi not configured");
+#endif
+}
+
+/**
+ * Callback function that is called when the WiFi connection is established successfully.
+ * It attempts to connect to the MQTT server.
+ *
+ * @param event The WiFiEventStationModeGotIP event that triggered the callback.
+ *
+ * @return void
+ */
+void onWiFiConnect(const WiFiEventStationModeGotIP &event)
+{
+    Serial.println("Connected to Wi-Fi sucessfully.");
+    connectMQTTIfDisconnected();
 }
 
 /**
@@ -452,7 +419,7 @@ void connectWifiIfNecessary()
  * If the MQTT client is already connected, this function does nothing.
  * If the MQTT connection attempt fails, an error message is printed to the serial monitor.
  */
-void connectMQTTIfNecessary()
+void connectMQTTIfDisconnected()
 {
     // Check if WiFi is connected
     if (WiFi.status() == WL_CONNECTED)
@@ -486,90 +453,36 @@ void connectMQTTIfNecessary()
                 mqttClient.subscribe((baseTopic + "config/tempOutside_min/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempOutside_max/set").c_str());
                 Serial.println("command topics subscribed");
+
+                if (startupTime == NULL)
+                {
+                    if (mqttClient.connected() && connectNTPClient())
+                    {
+                        time_t epochTime = timeClient.getEpochTime();
+                        struct tm *ptm = gmtime((time_t *)&epochTime);
+
+                        int day = ptm->tm_mday;
+                        int month = ptm->tm_mon + 1;
+                        int year = ptm->tm_year + 1900;
+                        int hour = ptm->tm_hour;
+                        int minute = ptm->tm_min;
+                        int second = ptm->tm_sec;
+
+                        char buffer[20];
+                        sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
+                        startupTime = String(buffer);
+
+                        Serial.print(F("Startup time: "));
+                        Serial.println(startupTime);
+                        mqttClient.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
+                    }
+                }
             }
             else
             {
                 Serial.println(F("MQTT connection failed"));
             }
         }
-    }
-}
-
-/**
- * This function publishes the current configuration values to the MQTT broker.
- * It publishes the requested mode, minimum delta temperature, hysteresis, minimum inside temperature,
- * minimum outside temperature, and maximum outside temperature.
- * If the MQTT client is not connected, this function does nothing.
- */
-void publishConfig()
-{
-    if (mqttClient.connected())
-    {
-        mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
-        mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str());
-        mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str());
-        mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str());
-        mqttClient.publish((baseTopic + "config/tempOutside_min").c_str(), String(tempOutside_min).c_str());
-        mqttClient.publish((baseTopic + "config/tempOutside_max").c_str(), String(tempOutside_max).c_str());
-        Serial.println("config published");
-    }
-}
-
-/**
- * This function connects to the NTP server and updates the time.
- * It returns true if the time was successfully updated, false otherwise.
- */
-bool connectNTPClient()
-{
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.println(F("Connecting to NTP server..."));
-        timeClient.begin();
-        int retries = 0;
-        while (!timeClient.update() && retries < 10)
-        {
-            timeClient.forceUpdate();
-            retries++;
-            delay(500);
-        }
-
-        // if time was successfully updated, return true
-        if (retries < 10)
-        {
-            Serial.println(F("NTP time updated"));
-            return true;
-        }
-        else
-        {
-            Serial.println(F("NTP time update failed"));
-            return false;
-        }
-    }
-    else
-    {
-        return false;
-    }
-}
-
-/**
- * @brief Blinks the built-in blue LED for a given amount of time.
- *
- * This function blinks the built-in blue LED on the ESP board for a given amount of time.
- * It turns on the LED for 50ms, then turns it off for 50ms, and repeats this process until
- * the specified sleep time has elapsed. The function subtracts 100ms from the sleep time
- * after each iteration to account for the time spent blinking the LED.
- *
- * @param sleepTimeMS The amount of time to sleep and blink the LED, in milliseconds.
- */
-void sleepAndBlink(int sleepTimeMS)
-{
-    while (sleepTimeMS > 0)
-    {
-        digitalWrite(LED_BUILTIN_BLUE, LOW);  // turn on the LED
-        delay(50);                            // wait for 50ms
-        digitalWrite(LED_BUILTIN_BLUE, HIGH); // turn off the LED
-        delay(50);                            // wait for 50ms
-        sleepTimeMS -= 100;                   // subtract 100ms from the delay time
     }
 }
 
@@ -657,4 +570,82 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     }
 
     mqttCommandReceived = true;
+}
+
+/**
+ * This function publishes the current configuration values to the MQTT broker.
+ * It publishes the requested mode, minimum delta temperature, hysteresis, minimum inside temperature,
+ * minimum outside temperature, and maximum outside temperature.
+ * If the MQTT client is not connected, this function does nothing.
+ */
+void publishConfig()
+{
+    if (mqttClient.connected())
+    {
+        mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
+        mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str());
+        mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str());
+        mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str());
+        mqttClient.publish((baseTopic + "config/tempOutside_min").c_str(), String(tempOutside_min).c_str());
+        mqttClient.publish((baseTopic + "config/tempOutside_max").c_str(), String(tempOutside_max).c_str());
+        Serial.println("config published");
+    }
+}
+
+/**
+ * This function connects to the NTP server and updates the time.
+ * It returns true if the time was successfully updated, false otherwise.
+ */
+bool connectNTPClient()
+{
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        Serial.println(F("Connecting to NTP server..."));
+        timeClient.begin();
+        int retries = 0;
+        while (!timeClient.update() && retries < 10)
+        {
+            timeClient.forceUpdate();
+            retries++;
+            delay(500);
+        }
+
+        // if time was successfully updated, return true
+        if (retries < 10)
+        {
+            Serial.println(F("NTP time updated"));
+            return true;
+        }
+        else
+        {
+            Serial.println(F("NTP time update failed"));
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+}
+
+/**
+ * @brief Blinks the built-in blue LED for a given amount of time.
+ *
+ * This function blinks the built-in blue LED on the ESP board for a given amount of time.
+ * It turns on the LED for 50ms, then turns it off for 50ms, and repeats this process until
+ * the specified sleep time has elapsed. The function subtracts 100ms from the sleep time
+ * after each iteration to account for the time spent blinking the LED.
+ *
+ * @param sleepTimeMS The amount of time to sleep and blink the LED, in milliseconds.
+ */
+void sleepAndBlink(int sleepTimeMS)
+{
+    while (sleepTimeMS > 0)
+    {
+        digitalWrite(LED_BUILTIN_BLUE, LOW);  // turn on the LED
+        delay(50);                            // wait for 50ms
+        digitalWrite(LED_BUILTIN_BLUE, HIGH); // turn off the LED
+        delay(50);                            // wait for 50ms
+        sleepTimeMS -= 100;                   // subtract 100ms from the delay time
+    }
 }
