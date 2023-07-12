@@ -94,6 +94,7 @@ void loop()
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectWifiIfNecessary();            // Connect to Wifi if not connected do this at the beginning so it can run in the background
     connectMQTTIfNecessary();            // Connect to MQTT if not connected do this at the beginning so it can run in the background
+    publishConfig();
     calculateAndSetVentilatorStatus();
 
     // this is the first time the loop is run, so we can post the startup time to MQTT for monitoring reboots
@@ -239,11 +240,11 @@ void calculateAndSetVentilatorStatus()
 
     //**** decide if ventilator should run or not ********
     bool ventilatorStatus = false;
-    String ventilatorStatusReason = "";
+    String ventilatorStatusReason = "Hysteresis phase";
     if (deltaTP > (min_delta + hysteresis))
     {
         ventilatorStatus = true;
-        ventilatorStatusReason = "DeltaTP > (MIN_Delta + HYSTERESIS): " + String(deltaTP) + " > " + String(min_delta) + String(min_delta) + String(hysteresis);
+        ventilatorStatusReason = "DeltaTP > (MIN_Delta + HYSTERESIS): " + String(deltaTP) + " > " + String(min_delta) + " + " + String(hysteresis);
     }
     else if (deltaTP <= (min_delta))
     {
@@ -281,10 +282,6 @@ void calculateAndSetVentilatorStatus()
     {
         ventilatorStatusReason = "requestedMode == OFF";
         setVentilatorOn(false);
-    }
-    if (mqttClient.connected())
-    {
-        mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
     }
 
     // **** publish vlaues via MQTT ********
@@ -436,12 +433,27 @@ void connectMQTTIfNecessary()
                 mqttClient.subscribe((baseTopic + "config/tempInside_min/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempOutside_min/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempOutside_max/set").c_str());
+                Serial.println("command topics subscribed");
             }
             else
             {
                 Serial.println(F("MQTT connection failed"));
             }
         }
+    }
+}
+
+void publishConfig()
+{
+    if (mqttClient.connected())
+    {
+        mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
+        mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str());
+        mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str());
+        mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str());
+        mqttClient.publish((baseTopic + "config/tempOutside_min").c_str(), String(tempOutside_min).c_str());
+        mqttClient.publish((baseTopic + "config/tempOutside_max").c_str(), String(tempOutside_max).c_str());
+        Serial.println("config published");
     }
 }
 
@@ -567,17 +579,4 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     }
 
     mqttCommandReceived = true;
-}
-
-void publishConfig()
-{
-    if (mqttClient.connected())
-    {
-        Serial.println("Publishing config");
-        mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str());
-        mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str());
-        mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str());
-        mqttClient.publish((baseTopic + "config/tempOutside_min").c_str(), String(tempOutside_min).c_str());
-        mqttClient.publish((baseTopic + "config/tempOutside_max").c_str(), String(tempOutside_max).c_str());
-    }
 }
