@@ -34,11 +34,10 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-//*******************************************************************
-
 bool errorOnInitialize = true;
 bool firstStartup = true;
 int wifiErrorCounter = 0;
+bool ventilatorStatus = false; // needs to be a global variable, so the state is saved across loops
 String baseTopic = "";
 String requestedMode = "AUTO"; // default mode after reboot is AUTO
 int min_delta = MIN_Delta;
@@ -58,6 +57,19 @@ NTPClient timeClient(ntpUDP, TIME_SERVER, 3600, 60000);
 DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE);    // The indoor sensor is now addressed with dhtInside
 DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now addressed with dhtOutside
 
+/**
+ * The setup function that runs once when the microcontroller starts up.
+ * It performs the following tasks:
+ * - Enables the watchdog timer to prevent the microcontroller from freezing
+ * - Initializes the built-in LED pins and the relay pin
+ * - Starts the serial communication at 115200 baud rate
+ * - Turns off the ventilator
+ * - Initializes the DHT sensors
+ * - Sets the MQTT callback function
+ * - Sets the MQTT base topic (if defined in secrets.h)
+ *
+ * @return void
+ */
 void setup()
 {
     ESP.wdtEnable(WDTO_8S);
@@ -67,9 +79,10 @@ void setup()
 
     digitalWrite(LED_BUILTIN_RED, LOW); // Turn on LED to show we have power
     pinMode(RELAIPIN, OUTPUT);          // Define relay pin as output
-    digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off relay
 
     Serial.begin(115200);
+
+    setVentilatorOn(false); // Turn off ventilator
     Serial.println(F("Testing sensors..."));
 
     dhtInside.begin(); // Start sensors
@@ -89,6 +102,18 @@ void setup()
     Serial.println(baseTopic);
 }
 
+/**
+ * The main loop function that runs continuously after the setup function has completed.
+ * It performs the following tasks:
+ * - Connects to WiFi and MQTT if necessary
+ * - Publishes the current configuration to MQTT
+ * - Calculates and sets the ventilator status based on the difference between the dew points inside and outside
+ * - Posts the startup time to MQTT on the first run
+ * - Checks for MQTT messages and processes them if received
+ * - Sleeps for 60 seconds before running again
+ *
+ * @return void
+ */
 void loop()
 {
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
@@ -141,6 +166,11 @@ void loop()
     }
 }
 
+/**
+ * Calculates the difference between the dew points inside and outside, and sets the ventilator status accordingly.
+ * If the difference is greater than the minimum delta plus the hysteresis, the ventilator is turned on.
+ * Otherwise, the ventilator is turned off.
+ */
 void calculateAndSetVentilatorStatus()
 {
 
@@ -239,7 +269,6 @@ void calculateAndSetVentilatorStatus()
     float deltaTP = dewPoint_inside - dewPoint_outside;
 
     //**** decide if ventilator should run or not ********
-    bool ventilatorStatus = false;
     String ventilatorStatusReason = "Hysteresis phase";
     if (deltaTP > (min_delta + hysteresis))
     {
@@ -298,6 +327,13 @@ void calculateAndSetVentilatorStatus()
     }
 }
 
+/**
+ * Sets the state of the ventilator to either on or off.
+ *
+ * @param running A boolean value indicating whether the ventilator should be turned on (true) or off (false).
+ *
+ * @return void
+ */
 void setVentilatorOn(bool running)
 {
     if (running == true)
@@ -318,6 +354,14 @@ void setVentilatorOn(bool running)
     }
 }
 
+/**
+ * Calculates the dew point temperature (in Celsius) based on the given temperature (in Celsius) and relative humidity (in percentage).
+ * The formula used for the calculation is based on the Magnus-Tetens approximation.
+ *
+ * @param t The temperature in Celsius.
+ * @param r The relative humidity in percentage.
+ * @return The dew point temperature in Celsius.
+ */
 float calculateDewpoint(float t, float r)
 {
     float a = 0, b = 0;
@@ -347,8 +391,11 @@ float calculateDewpoint(float t, float r)
     return {tt};
 }
 
-// This function checks if the WiFi is connected and tries to connect if it is not.
-// If the connection is unsuccessful, it will retry every 20 loops.
+/**
+ * This function checks if the WiFi is connected and tries to connect if it is not.
+ * If the connection is unsuccessful, it will retry every 20 loops.
+ * This function should be called periodically to ensure that the device stays connected to WiFi.
+ */
 void connectWifiIfNecessary()
 {
     // if connection is unsuccessful, try again every 20 loops
@@ -364,7 +411,7 @@ void connectWifiIfNecessary()
             int waitCounter = 0;
             while (WiFi.status() != WL_CONNECTED && waitCounter < 10)
             {
-                blinkDelay(500);
+                sleepAndBlink(500);
                 Serial.print(".");
                 waitCounter++;
             }
@@ -399,7 +446,12 @@ void connectWifiIfNecessary()
     }
 }
 
-// This function connects to the MQTT server if necessary
+/**
+ * This function checks if the MQTT client is connected to the server and connects if necessary.
+ * It also subscribes to the necessary MQTT topics for receiving commands.
+ * If the MQTT client is already connected, this function does nothing.
+ * If the MQTT connection attempt fails, an error message is printed to the serial monitor.
+ */
 void connectMQTTIfNecessary()
 {
     // Check if WiFi is connected
@@ -443,6 +495,12 @@ void connectMQTTIfNecessary()
     }
 }
 
+/**
+ * This function publishes the current configuration values to the MQTT broker.
+ * It publishes the requested mode, minimum delta temperature, hysteresis, minimum inside temperature,
+ * minimum outside temperature, and maximum outside temperature.
+ * If the MQTT client is not connected, this function does nothing.
+ */
 void publishConfig()
 {
     if (mqttClient.connected())
@@ -493,19 +551,39 @@ bool connectNTPClient()
     }
 }
 
-// This function blinks the built-in LED with a given delay time
-void blinkDelay(int delayTime)
+/**
+ * @brief Blinks the built-in blue LED for a given amount of time.
+ *
+ * This function blinks the built-in blue LED on the ESP board for a given amount of time.
+ * It turns on the LED for 50ms, then turns it off for 50ms, and repeats this process until
+ * the specified sleep time has elapsed. The function subtracts 100ms from the sleep time
+ * after each iteration to account for the time spent blinking the LED.
+ *
+ * @param sleepTimeMS The amount of time to sleep and blink the LED, in milliseconds.
+ */
+void sleepAndBlink(int sleepTimeMS)
 {
-    while (delayTime > 0)
+    while (sleepTimeMS > 0)
     {
         digitalWrite(LED_BUILTIN_BLUE, LOW);  // turn on the LED
         delay(50);                            // wait for 50ms
         digitalWrite(LED_BUILTIN_BLUE, HIGH); // turn off the LED
         delay(50);                            // wait for 50ms
-        delayTime -= 100;                     // subtract 100ms from the delay time
+        sleepTimeMS -= 100;                   // subtract 100ms from the delay time
     }
 }
 
+/**
+ * @brief Callback function for MQTT messages.
+ *
+ * This function is called whenever a message is received on a subscribed topic.
+ * It parses the topic and payload of the message and updates the relevant variables
+ * or configuration values accordingly.
+ *
+ * @param topic The topic of the received message.
+ * @param payload The payload of the received message.
+ * @param length The length of the payload.
+ */
 void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
     Serial.print("Message arrived [");
