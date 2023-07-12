@@ -40,7 +40,7 @@ int hysteresis = HYSTERESIS;           // hysteresis for turning off the ventila
 int tempInside_min = TEMPINSIDE_MIN;   // minimum temperature inside to turn on the ventilator
 int tempOutside_min = TEMPOUTSIDE_MIN; // minimum temperature outside to turn on the ventilator
 int tempOutside_max = TEMPOUTSIDE_MAX; // maximum temperature outside to turn on the ventilator
-bool mqttCommandReceived = false;      // used to check if a MQTT command has been received and handle them immediately
+bool stopSleeping = false;             // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
 WiFiEventHandler wifiConnectHandler;
 
 WiFiClient espClient;
@@ -85,8 +85,6 @@ void setup()
     dhtInside.begin();  // Start indoor sensor
     dhtOutside.begin(); // Start outdoor sensor
 
-    mqttClient.setCallback(mqttCallback);
-
     // set baseTopic to use for MQTT messages
 #ifdef SECRET_MQTT_BASETOPIC
     baseTopic = SECRET_MQTT_BASETOPIC; // set baseTopic to use for MQTT messages
@@ -126,9 +124,9 @@ void loop()
     {
         mqttClient.loop(); // Check for MQTT messages
         // if an MQTT command was received, stop sleeping and process the command
-        if (mqttCommandReceived)
+        if (stopSleeping)
         {
-            mqttCommandReceived = false;
+            stopSleeping = false;
             break;
         }
         delay(1000); // if this is too high, the mqtt connection will be lost
@@ -378,7 +376,7 @@ void initializeWiFi()
 
 #if defined(SECRET_WIFI_SSID) && defined(SECRET_WIFI_PASSWORD)
     WiFi.begin(ssid, password);
-    short waitCounter = 10; // wait max 5 seconds for connection
+    short waitCounter = 6; // wait max 5 seconds for connection
     while (WiFi.status() != WL_CONNECTED && waitCounter >= 0)
     {
         sleepAndBlink(500);
@@ -401,7 +399,7 @@ void initializeWiFi()
 
 /**
  * Callback function that is called when the WiFi connection is established successfully.
- * It attempts to connect to the MQTT server.
+ * It sets stopSleeping to true to inform the main loop that the device should not go to sleep.
  *
  * @param event The WiFiEventStationModeGotIP event that triggered the callback.
  *
@@ -410,7 +408,7 @@ void initializeWiFi()
 void onWiFiConnect(const WiFiEventStationModeGotIP &event)
 {
     Serial.println("Connected to Wi-Fi sucessfully.");
-    connectMQTTIfDisconnected();
+    stopSleeping = true; // stop sleeping if WiFi is connected to process MQTT commands immediately.
 }
 
 /**
@@ -441,8 +439,10 @@ void connectMQTTIfDisconnected()
         // Check if client is connected to MQTT server, if not, connect
         if (mqttClient.connected() == false)
         {
-            Serial.println(F("WiFi connected. Connecting to MQTT..."));
+            Serial.println(F("Connecting to MQTT..."));
             mqttClient.setServer(mqtt_server, mqtt_port);
+            mqttClient.setCallback(mqttCallback);
+
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
                 Serial.println(F("MQTT connected"));
@@ -569,7 +569,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
         Serial.println(tempOutside_max);
     }
 
-    mqttCommandReceived = true;
+    stopSleeping = true;
 }
 
 /**
