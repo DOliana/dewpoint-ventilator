@@ -41,12 +41,6 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 
 ### status topics
 
-    <!-- mqttClient.subscribe((baseTopic + "config/deltaTPmin/set").c_str());
-    mqttClient.subscribe((baseTopic + "config/hysteresis/set").c_str());
-    mqttClient.subscribe((baseTopic + "config/tempInside_min/set").c_str());
-    mqttClient.subscribe((baseTopic + "config/tempOutside_min/set").c_str());
-    mqttClient.subscribe((baseTopic + "config/tempOutside_max/set").c_str()); -->
-
 - `BASETOPIC/ventilation/reason`: Reason as string for the current state of the ventilator.
 - `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
 - `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
