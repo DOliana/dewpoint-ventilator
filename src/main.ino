@@ -611,7 +611,7 @@ void publishConfig()
 {
     if (mqttClient.connected())
     {
-        mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
+        mqttClient.publish((baseTopic + "config/mode").c_str(), requestedMode.c_str());
         mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str());
         mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str());
         mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str());
