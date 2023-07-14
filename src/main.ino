@@ -30,8 +30,8 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-long maxMilliSecondsWithoutWiFi = 300000; // maximum time without wifi after which we perform a full reboot
-long lastTimeWiFiOK = LONG_LONG_MAX;
+long unsigned maxMilliSecondsWithoutWiFi = 300000; // maximum time without wifi after which we perform a full reboot
+long unsigned lastTimeWiFiOK = ULONG_MAX;
 bool errorOnInitialize = true;         // used to prevent the microcontroller from freezing when the DHT sensors are not initialized correctly
 String startupTime;                    // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;         // needs to be a global variable, so the state is saved across loops
@@ -53,6 +53,17 @@ NTPClient timeClient(ntpUDP, TIME_SERVER, 3600, 60000);
 
 DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE);    // The indoor sensor is now addressed with dhtInside
 DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now addressed with dhtOutside
+
+/**
+ * This struct that represents the result of checking the DHT sensors.
+ * It contains a boolean field "sensorsOK" indicating whether the sensors are working correctly,
+ * and a string field "errorReason" containing any error messages if applicable.
+ */
+struct SensorCheckResult
+{
+    bool sensorsOK;
+    String errorReasoun;
+};
 
 /**
  * The setup function that runs once when the microcontroller starts up.
@@ -284,17 +295,6 @@ void calculateAndSetVentilatorStatus()
         Serial.println(F("published to MQTT"));
     }
 }
-
-/**
- * This struct that represents the result of checking the DHT sensors.
- * It contains a boolean field "sensorsOK" indicating whether the sensors are working correctly,
- * and a string field "errorReason" containing any error messages if applicable.
- */
-struct SensorCheckResult
-{
-    bool sensorsOK;
-    String errorReasoun;
-};
 
 /**
  * Checks the readings from the DHT sensors and returns a SensorCheckResult struct indicating whether the sensors are working correctly.
