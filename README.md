@@ -1,5 +1,7 @@
 # dew point ventilator
 
+**notice**: this is still a work in prorgess. I try to keep the main branch in a stable state and will try to fix issues if any come up / are reported but I do this in my spare time so...
+
 ## abstract
 
 This was adpated to work on an ESP 8266 (I used the Huzzah feather) and to add some connectivity. I added:
