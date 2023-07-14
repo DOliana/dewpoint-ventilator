@@ -134,14 +134,20 @@ void loop()
     // if we do not call mqttclient.loop for to long, the connection will be lost
     for (short i = 0; i < 60; i++) // sleep for 60 seconds
     {
-        mqttClient.loop(); // Check for MQTT messages
-        // if an MQTT command was received, stop sleeping and process the command
+        if (mqttClient.connected())
+        {
+            // publish heartbeat every 10 seconds
+            if (i % 10 == 0)
+                mqttClient.publish((baseTopic + "log/heartbeat").c_str(), getTimeString().c_str(), true);
+            mqttClient.loop(); // Check for MQTT messages
+            // if an MQTT command was received, stop sleeping and process the command
+        }
         if (stopSleeping)
         {
             stopSleeping = false;
             break;
         }
-        delay(1000); // if this is too high, the mqtt connection will be lost
+        delay(1000);
         ESP.wdtFeed();
     }
 }
@@ -153,40 +159,40 @@ void loop()
  */
 void calculateAndSetVentilatorStatus()
 {
-    float humidityInside = dhtInside.readHumidity() + CORRECTION_HUMIDITY_INSIDE;    // Read indoor humidity and store it under "h1"
-    float tempInside = dhtInside.readTemperature() + CORRECTION_TEMP_INSIDE;         // Read indoor temperature and store it under "t1"
-    float humidityOutside = dhtOutside.readHumidity() + CORRECTION_HUMIDITY_OUTSIDE; // Read outdoor humidity and store it under "h2"
-    float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;      // Read outdoor temperature and store it under "t2"
-
     if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
     {
         SensorCheckResult sensorStatus = checkSensors();
         errorOnInitialize = sensorStatus.sensorsOK == false;
-    }
-    
-    if (errorOnInitialize == true)
-    {
-        digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
 
-        if (mqttClient.connected())
+        if (sensorStatus.sensorsOK == false)
         {
-            mqttClient.publish((baseTopic + "status").c_str(), ("error during initialization: " + errorString).c_str());
-            Serial.println(F("Error message sent"));
-            delay(500);
+            digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
+
+            if (mqttClient.connected())
+            {
+                mqttClient.publish((baseTopic + "log/status").c_str(), ("error during initialization: " + sensorStatus.errorReasoun).c_str());
+                Serial.println(F("Error message sent"));
+                delay(500); // wait for message to be sent
+            }
+
+            Serial.println(F("Restarting..."));
+            ESP.restart();
         }
-        Serial.println(F("Restarting..."));
-        while (1)
-            ; // Endless loop to restart the CPU through the watchdog
-    }
-    else
-    {
-        if (mqttClient.connected())
+        else
         {
-            mqttClient.publish((baseTopic + "status").c_str(), "initialized");
+            if (mqttClient.connected())
+            {
+                mqttClient.publish((baseTopic + "log/status").c_str(), "initialized");
+            }
         }
     }
 
     ESP.wdtFeed(); // feed the watchdog
+
+    float humidityInside = dhtInside.readHumidity() + CORRECTION_HUMIDITY_INSIDE;    // Read indoor humidity and store it under "h1"
+    float tempInside = dhtInside.readTemperature() + CORRECTION_TEMP_INSIDE;         // Read indoor temperature and store it under "t1"
+    float humidityOutside = dhtOutside.readHumidity() + CORRECTION_HUMIDITY_OUTSIDE; // Read outdoor humidity and store it under "h2"
+    float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;      // Read outdoor temperature and store it under "t2"
 
     //**** Print sensor values********
     Serial.print(F("sensor-inside: "));
@@ -481,7 +487,7 @@ void connectMQTTIfDisconnected()
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
                 Serial.println(F("MQTT connected"));
-                mqttClient.subscribe((baseTopic + "mode/set").c_str());
+                mqttClient.subscribe((baseTopic + "config/mode/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/deltaTPmin/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/hysteresis/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempInside_min/set").c_str());
@@ -493,23 +499,11 @@ void connectMQTTIfDisconnected()
                 {
                     if (mqttClient.connected() && connectNTPClient())
                     {
-                        time_t epochTime = timeClient.getEpochTime();
-                        struct tm *ptm = gmtime((time_t *)&epochTime);
-
-                        int day = ptm->tm_mday;
-                        int month = ptm->tm_mon + 1;
-                        int year = ptm->tm_year + 1900;
-                        int hour = ptm->tm_hour;
-                        int minute = ptm->tm_min;
-                        int second = ptm->tm_sec;
-
-                        char buffer[20];
-                        sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
-                        startupTime = String(buffer);
+                        startupTime = getTimeString();
 
                         Serial.print(F("Startup time: "));
                         Serial.println(startupTime);
-                        mqttClient.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
+                        mqttClient.publish((baseTopic + "log/startup").c_str(), startupTime.c_str(), true);
                     }
                 }
             }
@@ -544,7 +538,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     }
     Serial.println(payloadStr);
 
-    if (strcmp(topic, (baseTopic + "mode/set").c_str()) == 0)
+    if (strcmp(topic, (baseTopic + "config/mode/set").c_str()) == 0)
     {
         // code to execute if topic equals baseTopic + "mode/set"
         if (payloadStr == "AUTO")
@@ -683,4 +677,23 @@ void sleepAndBlink(int sleepTimeMS)
         delay(50);                            // wait for 50ms
         sleepTimeMS -= 100;                   // subtract 100ms from the delay time
     }
+}
+
+String getTimeString()
+{
+    String timeString;
+    time_t epochTime = timeClient.getEpochTime();
+    struct tm *ptm = gmtime((time_t *)&epochTime);
+
+    int day = ptm->tm_mday;
+    int month = ptm->tm_mon + 1;
+    int year = ptm->tm_year + 1900;
+    int hour = ptm->tm_hour;
+    int minute = ptm->tm_min;
+    int second = ptm->tm_sec;
+
+    char buffer[20];
+    sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
+    timeString = String(buffer);
+    return timeString;
 }
