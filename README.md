@@ -4,9 +4,11 @@
 
 ## abstract
 
-This was adpated to work on an ESP 8266 (I used the Huzzah feather) and to add some connectivity. I added:
+The original project idea, code and wiring can be  found here [Taupunktlüfter bei heuse make](https://github.com/MakeMagazinDE/Taupunktluefter). The code was taken & adpated to work on an ESP 8266 (I used the Huzzah feather) and to add some connectivity. I added:
 
-- MQTT to post the sensor data and ventilation status
+- MQTT to 
+  - post the sensor data and ventilation status
+  - be able to change settings remotely
 - Translated everything to english to make it more available
 
 sources:
@@ -16,10 +18,9 @@ sources:
 
 ## project setup
 
-- VSCode
-  - isntall `PlatformIO IDE` extension
+I used Visual Studio Code with the `PlatformIO IDE` extension.
 
-Arduino IDE should also work - hasn't been tested. The required libraries can be found in the `platformio.ini` file.
+Arduino IDE should also work - hasn't been tested (and the folder structure would have to be adapted). The required libraries can be found in the `platformio.ini` file.
 
 ### configuration
 
