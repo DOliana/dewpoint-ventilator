@@ -64,6 +64,7 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 - `BASETOPIC/config/tempInside_min/set`: minimum inside temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_min/set`: minimum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_max/set`: maximum outdoor temperature at which ventilation is activated
+- `BASETOPIC/config/reset`: set this to `1` or `true` to reset the config values to the default config (aka what was in `settings.h`)
 
 ## learnings
 

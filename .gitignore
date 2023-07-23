@@ -4,5 +4,6 @@
 .vscode/launch.json
 .vscode/ipch
 dewpoint-vent.code-workspace
+dewpoint-ventilator.code-workspace
 src/secrets.h
 src/settings.h

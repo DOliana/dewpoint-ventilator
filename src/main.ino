@@ -6,9 +6,14 @@
 #include <WiFiUdp.h>      // for time sync
 #include <secrets.h>      // for WiFi and MQTT secrets
 #include <settings.h>     // for settings
+#include <ArduinoJson.h>  // for JSON parsing (config)
+#include "FS.h"           // for file system (config)
+#include <LittleFS.h>     // for file system (config)
 
 #define RELAIS_ON HIGH // define the relais on value
 #define RELAIS_OFF LOW // define the relais off value
+
+const char *config_path = "/config.json";
 
 // ********* WiFi + MQTT setup (values defined in secret.h) ******
 const char *mqtt_server = SECRET_MQTT_SERVER;
@@ -31,18 +36,18 @@ const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
 long unsigned maxMilliSecondsWithoutWiFi = 300000; // maximum time without wifi after which we perform a full reboot
-long unsigned lastTimeWiFiOK = ULONG_MAX;
-bool errorOnInitialize = true;         // used to prevent the microcontroller from freezing when the DHT sensors are not initialized correctly
-String startupTime;                    // startup time - if set its been sent. Used to prevent sending the startup message multiple times
-bool ventilatorStatus = false;         // needs to be a global variable, so the state is saved across loops
-String baseTopic = "";                 // used to store the MQTT base topic
-String requestedMode = "AUTO";         // default mode after reboot is AUTO
-int min_delta = MIN_Delta;             // minimum difference between the dew points inside and outside to turn on the ventilator
-int hysteresis = HYSTERESIS;           // hysteresis for turning off the ventilator
-int tempInside_min = TEMPINSIDE_MIN;   // minimum temperature inside to turn on the ventilator
-int tempOutside_min = TEMPOUTSIDE_MIN; // minimum temperature outside to turn on the ventilator
-int tempOutside_max = TEMPOUTSIDE_MAX; // maximum temperature outside to turn on the ventilator
-bool stopSleeping = false;             // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
+long unsigned lastTimeWiFiOK = ULONG_MAX;          // used to keep track of the last time the WiFi was connected
+bool errorOnInitialize = true;                     // used to prevent the microcontroller from freezing when the DHT sensors are not initialized correctly
+String startupTime;                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
+bool ventilatorStatus = false;                     // needs to be a global variable, so the state is saved across loops
+String baseTopic = "";                             // used to store the MQTT base topic
+String requestedMode = "AUTO";                     // default mode after reboot is AUTO
+int min_delta = MIN_Delta;                         // minimum difference between the dew points inside and outside to turn on the ventilator
+int hysteresis = HYSTERESIS;                       // hysteresis for turning off the ventilator
+int tempInside_min = TEMPINSIDE_MIN;               // minimum temperature inside to turn on the ventilator
+int tempOutside_min = TEMPOUTSIDE_MIN;             // minimum temperature outside to turn on the ventilator
+int tempOutside_max = TEMPOUTSIDE_MAX;             // maximum temperature outside to turn on the ventilator
+bool stopSleeping = false;                         // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
 WiFiEventHandler wifiConnectHandler;
 
 WiFiClient espClient;
@@ -108,6 +113,14 @@ void setup()
 #endif
     Serial.print("MQTT base topic set: ");
     Serial.println(baseTopic);
+
+    // load config from file if it exists
+    if (loadConfig() == false)
+    {
+        // default values will be used instead
+        Serial.println("Failed to load config from file - saving default values in config");
+        resetConfig();
+    }
 }
 
 /**
@@ -493,6 +506,7 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe((baseTopic + "config/tempInside_min/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempOutside_min/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempOutside_max/set").c_str());
+                mqttClient.subscribe((baseTopic + "config/reset").c_str());
                 Serial.println("command topics subscribed");
 
                 if (startupTime == NULL)
@@ -597,6 +611,14 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
         Serial.print("tempOutside_max set to ");
         Serial.println(tempOutside_max);
     }
+    else if (strcmp(topic, (baseTopic + "config/reset").c_str()) == 0)
+    {
+        // code to execute if topic equals baseTopic + "config/reset"
+        if (payloadStr == "true" or payloadStr == "1")
+        {
+            resetConfig();
+        }
+    }
 
     stopSleeping = true;
 }
@@ -679,6 +701,12 @@ void sleepAndBlink(int sleepTimeMS)
     }
 }
 
+/**
+ * Returns the current time as a formatted string in ISO 8601 format.
+ * The time is obtained from the NTP server using the timeClient object.
+ *
+ * @return A string representing the current time in ISO 8601 format.
+ */
 String getTimeString()
 {
     String timeString;
@@ -696,4 +724,86 @@ String getTimeString()
     sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
     timeString = String(buffer);
     return timeString;
+}
+
+/**
+ * Saves the current configuration values to a JSON file on the LittleFS file system.
+ *
+ * @return True if the configuration was successfully saved, false otherwise.
+ */
+bool saveConfig()
+{
+    StaticJsonDocument<200> doc;
+    doc["mode"] = requestedMode;
+    doc["deltaTPmin"] = min_delta;
+    doc["hysteresis"] = hysteresis;
+    doc["tempInside_min"] = tempInside_min;
+    doc["tempOutside_min"] = tempOutside_min;
+    doc["tempOutside_max"] = tempOutside_max;
+
+    // Open file for writing
+    File configFile = LittleFS.open(config_path, "w");
+    if (!configFile)
+    {
+        Serial.println("Failed to open config file for writing");
+        return false;
+    }
+
+    // Serialize JSON to file
+    serializeJson(doc, configFile);
+    return true;
+}
+
+/**
+ * Loads the configuration values from a JSON file on the LittleFS file system.
+ * The function reads the configuration file and updates the relevant variables
+ * with the values stored in the file.
+ *
+ * @return True if the configuration was successfully loaded, false otherwise.
+ */
+bool loadConfig()
+{
+    File configFile = LittleFS.open(config_path, "r");
+    if (!configFile)
+    {
+        Serial.println("Failed to open config file");
+        return false;
+    }
+
+    // StaticJsonDocument<200> doc;
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, configFile);
+
+    if (error)
+    {
+        Serial.print(F("Failed to open & deserialize config file: "));
+        Serial.println(error.f_str());
+        return false;
+    }
+
+    requestedMode = doc["mode"].as<String>();
+    min_delta = doc["deltaTPmin"].as<float>();
+    hysteresis = doc["hysteresis"].as<float>();
+    tempInside_min = doc["tempInside_min"].as<float>();
+    tempOutside_min = doc["tempOutside_min"].as<float>();
+    tempOutside_max = doc["tempOutside_max"].as<float>();
+
+    return true;
+}
+
+/**
+ * Resets the configuration values to their default values and saves them to storage. The default values are defined in the secrets.h file.
+ *
+ * @return True if the configuration was successfully saved, false otherwise.
+ */
+void resetConfig()
+{
+    requestedMode = "AUTO";
+    min_delta = MIN_Delta;
+    hysteresis = HYSTERESIS;
+    tempInside_min = TEMPINSIDE_MIN;
+    tempOutside_min = TEMPOUTSIDE_MIN;
+    tempOutside_max = TEMPOUTSIDE_MAX;
+    Serial.println("Config reset to default values");
+    saveConfig();
 }
