@@ -770,8 +770,7 @@ bool loadConfig()
         return false;
     }
 
-    // StaticJsonDocument<200> doc;
-    DynamicJsonDocument doc(1024);
+    StaticJsonDocument<200> doc;
     DeserializationError error = deserializeJson(doc, configFile);
 
     if (error)
