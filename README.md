@@ -13,7 +13,7 @@ The original project idea, code and wiring can be  found here [Taupunktlüfter b
 
 sources:
 
-- original project + code from [Taupunktlüfter bei heuse make](https://github.com/MakeMagazinDE/Taupunktluefter)
+- original project + code from [Taupunktlüfter bei heise make](https://github.com/MakeMagazinDE/Taupunktluefter)
 - article in [heise make](https://www.heise.de/select/make/2022/1/2135511212557842576)
 
 ## project setup
