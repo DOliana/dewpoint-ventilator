@@ -40,7 +40,7 @@ long unsigned lastTimeWiFiOK = ULONG_MAX;          // used to keep track of the 
 bool errorOnInitialize = true;                     // used to prevent the microcontroller from freezing when the DHT sensors are not initialized correctly
 String startupTime;                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;                     // needs to be a global variable, so the state is saved across loops
-String baseTopic = "";                             // used to store the MQTT base topic
+String baseTopic = "dewppoint-ventilator";         // used to store the MQTT base topic
 String requestedMode = "AUTO";                     // default mode after reboot is AUTO
 int min_delta = MIN_Delta;                         // minimum difference between the dew points inside and outside to turn on the ventilator
 int hysteresis = HYSTERESIS;                       // hysteresis for turning off the ventilator
