@@ -30,6 +30,8 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
+long unsigned maxMilliSecondsWithoutWiFi = 300000; // maximum time without wifi after which we perform a full reboot
+long unsigned lastTimeWiFiOK = ULONG_MAX;
 bool errorOnInitialize = true;         // used to prevent the microcontroller from freezing when the DHT sensors are not initialized correctly
 String startupTime;                    // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;         // needs to be a global variable, so the state is saved across loops
@@ -51,6 +53,17 @@ NTPClient timeClient(ntpUDP, TIME_SERVER, 3600, 60000);
 
 DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE);    // The indoor sensor is now addressed with dhtInside
 DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now addressed with dhtOutside
+
+/**
+ * This struct that represents the result of checking the DHT sensors.
+ * It contains a boolean field "sensorsOK" indicating whether the sensors are working correctly,
+ * and a string field "errorReason" containing any error messages if applicable.
+ */
+struct SensorCheckResult
+{
+    bool sensorsOK;
+    String errorReasoun;
+};
 
 /**
  * The setup function that runs once when the microcontroller starts up.
@@ -111,6 +124,16 @@ void setup()
  */
 void loop()
 {
+    // if we do not have a WiFi connection, reboot the microcontroller after a certain time
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        lastTimeWiFiOK = millis();
+    }
+    else if (millis() - lastTimeWiFiOK > maxMilliSecondsWithoutWiFi)
+    {
+        ESP.restart();
+    }
+
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectMQTTIfDisconnected();         // Connect to MQTT if not connected do this at the beginning so it can run in the background
     publishConfig();
@@ -122,14 +145,20 @@ void loop()
     // if we do not call mqttclient.loop for to long, the connection will be lost
     for (short i = 0; i < 60; i++) // sleep for 60 seconds
     {
-        mqttClient.loop(); // Check for MQTT messages
-        // if an MQTT command was received, stop sleeping and process the command
+        if (mqttClient.connected())
+        {
+            // publish heartbeat every 10 seconds
+            if (i % 10 == 0)
+                mqttClient.publish((baseTopic + "log/heartbeat").c_str(), getTimeString().c_str(), true);
+            mqttClient.loop(); // Check for MQTT messages
+            // if an MQTT command was received, stop sleeping and process the command
+        }
         if (stopSleeping)
         {
             stopSleeping = false;
             break;
         }
-        delay(1000); // if this is too high, the mqtt connection will be lost
+        delay(1000);
         ESP.wdtFeed();
     }
 }
@@ -141,68 +170,40 @@ void loop()
  */
 void calculateAndSetVentilatorStatus()
 {
+    if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
+    {
+        SensorCheckResult sensorStatus = checkSensors();
+        errorOnInitialize = sensorStatus.sensorsOK == false;
+
+        if (sensorStatus.sensorsOK == false)
+        {
+            digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
+
+            if (mqttClient.connected())
+            {
+                mqttClient.publish((baseTopic + "log/status").c_str(), ("error during initialization: " + sensorStatus.errorReasoun).c_str());
+                Serial.println(F("Error message sent"));
+                delay(500); // wait for message to be sent
+            }
+
+            Serial.println(F("Restarting..."));
+            ESP.restart();
+        }
+        else
+        {
+            if (mqttClient.connected())
+            {
+                mqttClient.publish((baseTopic + "log/status").c_str(), "initialized");
+            }
+        }
+    }
+
+    ESP.wdtFeed(); // feed the watchdog
 
     float humidityInside = dhtInside.readHumidity() + CORRECTION_HUMIDITY_INSIDE;    // Read indoor humidity and store it under "h1"
     float tempInside = dhtInside.readTemperature() + CORRECTION_TEMP_INSIDE;         // Read indoor temperature and store it under "t1"
     float humidityOutside = dhtOutside.readHumidity() + CORRECTION_HUMIDITY_OUTSIDE; // Read outdoor humidity and store it under "h2"
     float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;      // Read outdoor temperature and store it under "t2"
-
-    String errorString = "";
-    if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
-    {
-        errorOnInitialize = false;
-        if (isnan(humidityInside) || isnan(tempInside) || humidityInside > 100 || humidityInside < 1 || tempInside < -40 || tempInside > 80)
-        {
-            Serial.println(F("Error reading from sensor inside."));
-            errorString.concat("Error reading from sensor inside. ");
-            errorOnInitialize = true;
-        }
-        else
-        {
-            Serial.println(F("sensor inside OK"));
-        }
-
-        delay(1000);
-
-        if (isnan(humidityOutside) || isnan(tempOutside) || humidityOutside > 100 || humidityOutside < 1 || tempOutside < -40 || tempOutside > 80)
-        {
-            Serial.println(F("Error reading from sensor outside."));
-            errorString.concat("Error reading from sensor outside. ");
-            errorOnInitialize = true;
-        }
-        else
-        {
-            Serial.println(F("sensor outside OK"));
-        }
-
-        delay(1000);
-    }
-    if (isnan(humidityInside) || isnan(tempInside) || isnan(humidityOutside) || isnan(tempOutside))
-        errorOnInitialize = true;
-
-    if (errorOnInitialize == true)
-    {
-        digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
-
-        if (mqttClient.connected())
-        {
-            mqttClient.publish((baseTopic + "status").c_str(), ("error during initialization: " + errorString).c_str());
-            Serial.println(F("Error message sent"));
-            delay(500);
-        }
-        Serial.println(F("Restarting..."));
-        while (1)
-            ; // Endless loop to restart the CPU through the watchdog
-    }
-    else
-    {
-        if (mqttClient.connected())
-        {
-            mqttClient.publish((baseTopic + "status").c_str(), "initialized");
-        }
-    }
-
-    ESP.wdtFeed(); // feed the watchdog
 
     //**** Print sensor values********
     Serial.print(F("sensor-inside: "));
@@ -266,11 +267,7 @@ void calculateAndSetVentilatorStatus()
         ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX: " + String(tempOutside) + " > " + String(tempOutside_max);
     }
 
-    if (requestedMode == "AUTO")
-    {
-        setVentilatorOn(ventilatorStatus);
-    }
-    else if (requestedMode == "ON")
+    if (requestedMode == "ON")
     {
         ventilatorStatusReason = "requestedMode == ON";
         setVentilatorOn(true);
@@ -279,6 +276,10 @@ void calculateAndSetVentilatorStatus()
     {
         ventilatorStatusReason = "requestedMode == OFF";
         setVentilatorOn(false);
+    }
+    else // mode == auto or unknown
+    {
+        setVentilatorOn(ventilatorStatus);
     }
 
     // **** publish vlaues via MQTT ********
@@ -293,6 +294,46 @@ void calculateAndSetVentilatorStatus()
         mqttClient.publish((baseTopic + "ventilation/reason").c_str(), ventilatorStatusReason.c_str());
         Serial.println(F("published to MQTT"));
     }
+}
+
+/**
+ * Checks the readings from the DHT sensors and returns a SensorCheckResult struct indicating whether the sensors are working correctly.
+ * If any of the readings are NaN or outside of the expected range, the function sets the "sensorsOK" field of the result to false and adds an error message to the "errorReason" field.
+ *
+ * @return A SensorCheckResult struct indicating whether the sensors are working correctly and any error messages if applicable.
+ */
+SensorCheckResult checkSensors()
+{
+    SensorCheckResult result = {true, ""};
+
+    float humidityInside = dhtInside.readHumidity();   // Read indoor humidity and store it under "h1"
+    float tempInside = dhtInside.readTemperature();    // Read indoor temperature and store it under "t1"
+    float humidityOutside = dhtOutside.readHumidity(); // Read outdoor humidity and store it under "h2"
+    float tempOutside = dhtOutside.readTemperature();  // Read outdoor temperature and store it under "t2"
+
+    if (isnan(humidityInside) || isnan(tempInside) || humidityInside > 100 || humidityInside < 1 || tempInside < -40 || tempInside > 80)
+    {
+        Serial.println(F("Error reading from sensor inside."));
+        result.sensorsOK = false;
+        result.errorReasoun = "Error reading from sensor inside. ";
+    }
+    else
+    {
+        Serial.println(F("sensor inside OK"));
+    }
+
+    if (isnan(humidityOutside) || isnan(tempOutside) || humidityOutside > 100 || humidityOutside < 1 || tempOutside < -40 || tempOutside > 80)
+    {
+        Serial.println(F("Error reading from sensor outside."));
+        result.sensorsOK = false;
+        result.errorReasoun.concat("Error reading from sensor outside. ");
+    }
+    else
+    {
+        Serial.println(F("sensor outside OK"));
+    }
+
+    return result;
 }
 
 /**
@@ -446,7 +487,7 @@ void connectMQTTIfDisconnected()
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
                 Serial.println(F("MQTT connected"));
-                mqttClient.subscribe((baseTopic + "mode/set").c_str());
+                mqttClient.subscribe((baseTopic + "config/mode/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/deltaTPmin/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/hysteresis/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempInside_min/set").c_str());
@@ -458,23 +499,11 @@ void connectMQTTIfDisconnected()
                 {
                     if (mqttClient.connected() && connectNTPClient())
                     {
-                        time_t epochTime = timeClient.getEpochTime();
-                        struct tm *ptm = gmtime((time_t *)&epochTime);
-
-                        int day = ptm->tm_mday;
-                        int month = ptm->tm_mon + 1;
-                        int year = ptm->tm_year + 1900;
-                        int hour = ptm->tm_hour;
-                        int minute = ptm->tm_min;
-                        int second = ptm->tm_sec;
-
-                        char buffer[20];
-                        sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
-                        startupTime = String(buffer);
+                        startupTime = getTimeString();
 
                         Serial.print(F("Startup time: "));
                         Serial.println(startupTime);
-                        mqttClient.publish((baseTopic + "startup").c_str(), startupTime.c_str(), true);
+                        mqttClient.publish((baseTopic + "log/startup").c_str(), startupTime.c_str(), true);
                     }
                 }
             }
@@ -509,7 +538,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     }
     Serial.println(payloadStr);
 
-    if (strcmp(topic, (baseTopic + "mode/set").c_str()) == 0)
+    if (strcmp(topic, (baseTopic + "config/mode/set").c_str()) == 0)
     {
         // code to execute if topic equals baseTopic + "mode/set"
         if (payloadStr == "AUTO")
@@ -582,7 +611,7 @@ void publishConfig()
 {
     if (mqttClient.connected())
     {
-        mqttClient.publish((baseTopic + "mode").c_str(), requestedMode.c_str());
+        mqttClient.publish((baseTopic + "config/mode").c_str(), requestedMode.c_str());
         mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str());
         mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str());
         mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str());
@@ -648,4 +677,23 @@ void sleepAndBlink(int sleepTimeMS)
         delay(50);                            // wait for 50ms
         sleepTimeMS -= 100;                   // subtract 100ms from the delay time
     }
+}
+
+String getTimeString()
+{
+    String timeString;
+    time_t epochTime = timeClient.getEpochTime();
+    struct tm *ptm = gmtime((time_t *)&epochTime);
+
+    int day = ptm->tm_mday;
+    int month = ptm->tm_mon + 1;
+    int year = ptm->tm_year + 1900;
+    int hour = ptm->tm_hour;
+    int minute = ptm->tm_min;
+    int second = ptm->tm_sec;
+
+    char buffer[20];
+    sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
+    timeString = String(buffer);
+    return timeString;
 }

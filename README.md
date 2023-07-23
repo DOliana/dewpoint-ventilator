@@ -18,10 +18,9 @@ sources:
 
 ## project setup
 
-- VSCode
-  - isntall `PlatformIO IDE` extension
+I used Visual Studio Code with the `PlatformIO IDE` extension.
 
-Arduino IDE should also work - hasn't been tested. The required libraries can be found in the `platformio.ini` file.
+Arduino IDE should also work - hasn't been tested (and the folder structure would have to be adapted). The required libraries can be found in the `platformio.ini` file.
 
 ### configuration
 
@@ -45,19 +44,21 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 
 ### status topics
 
-- `BASETOPIC/ventilation/reason`: Reason as string for the current state of the ventilator.
-- `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
-- `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
-- `BASETOPIC/mode`: Mode of the dewpoint ventilator. Can be ON, OFF, AUTO.
+- `BASETOPIC/config/mode`: Mode of the dewpoint ventilator. Can be ON, OFF, AUTO.
 - `BASETOPIC/config/deltaTPmin`: minimum difference between dewpoints before ventilator is turned on
 - `BASETOPIC/config/hysteresis`: distance between switch-on and switch-off point
 - `BASETOPIC/config/tempInside_min`: minimum inside temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_min`: minimum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_max`: maximum outdoor temperature at which ventilation is activated
+- `BASETOPIC/log/startup`: startup time in UTC
+- `BASETOPIC/log/heartbeat`: heartbeat timestamp - sent every 10 seconds
+- `BASETOPIC/ventilation/reason`: Reason as string for the current state of the ventilator.
+- `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
+- `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
 
 ### command (config) topics
 
-- `BASETOPIC/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of ON, OFF, AUTO. This setting is not persisted across reboots and defaults to AUTO.
+- `BASETOPIC/config/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of ON, OFF, AUTO. This setting is not persisted across reboots and defaults to AUTO.
 - `BASETOPIC/config/deltaTPmin/set`: minimum difference between dewpoints before ventilator is turned on
 - `BASETOPIC/config/hysteresis/set`: distance between switch-on and switch-off point
 - `BASETOPIC/config/tempInside_min/set`: minimum inside temperature at which ventilation is activated
@@ -68,4 +69,4 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 
 - don't put the outside sensor close to where the ventilator is. In my case I had it about 50cm from the ventilator and as soon as the ventilator ran, the outside temperature was strongly affected by the air coming from the ventilator.
 - think about how to easily update your software during testing (I ran into the basement with my laptop from the 2nd floor about 100 times) -> will look at OTA in the future
-- ESP8266 seems to be pretty resistant to interferences. It worked without all the preventing measures mentioned in the original article (I only put the 1000 µF capacitor between + and - and left out all other capacitors & resistors that were meant to help with interferences)
+- ESP8266 seems to be pretty resistant to interferences. It worked without the preventing measures mentioned in the original article (I only put the 1000 µF capacitor between + and - and left out all other capacitors & resistors that were meant to help with interferences)
