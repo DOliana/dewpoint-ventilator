@@ -35,7 +35,7 @@ const char *wifi_hostname = mqtt_clientID;
 
 long unsigned maxMilliSecondsWithoutWiFi = 300000; // maximum time without wifi after which we perform a full reboot
 long unsigned lastTimeWiFiOK = ULONG_MAX;          // used to keep track of the last time the WiFi was connected
-bool errorOnInitialize = true;                     // used to prevent the microcontroller from freezing when the DHT sensors are not initialized correctly
+bool errorOnInitialize = true;                     // used to keep track of whether the sensors are working correctly on first start
 String startupTime;                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;                     // needs to be a global variable, so the state is saved across loops
 String baseTopic = "dewppoint-ventilator";         // used to store the MQTT base topic (can be an empty string if no base topic is desired)
@@ -62,8 +62,13 @@ DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now ad
  * It contains a boolean field "sensorsOK" indicating whether the sensors are working correctly,
  * and a string field "errorReason" containing any error messages if applicable.
  */
-struct SensorCheckResult
+struct SensorValues
 {
+    float humidityInside;
+    float tempInside;
+    float humidityOutside;
+    float tempOutside;
+
     bool sensorsOK;
     String errorReasoun;
 };
@@ -191,23 +196,25 @@ void loop()
  */
 void calculateAndSetVentilatorStatus()
 {
+    SensorValues sensorValues = getSensorValues();
+    
     if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
     {
-        SensorCheckResult sensorStatus = checkSensors();
-        errorOnInitialize = sensorStatus.sensorsOK == false;
+        errorOnInitialize = sensorValues.sensorsOK == false;
 
-        if (sensorStatus.sensorsOK == false)
+        if (sensorValues.sensorsOK == false)
         {
             digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
 
             if (mqttClient.connected())
             {
-                mqttClient.publish((baseTopic + "log/status").c_str(), ("error during initialization: " + sensorStatus.errorReasoun).c_str());
+                mqttClient.publish((baseTopic + "log/status").c_str(), ("sensors show errors: " + sensorValues.errorReasoun).c_str());
                 Serial.println(F("Error message sent"));
                 delay(500); // wait for message to be sent
             }
 
-            Serial.println(F("Restarting..."));
+            Serial.println(F("Restarting in 5 seconds..."));
+            delay(5000);
             ESP.restart();
         }
         else
@@ -217,37 +224,30 @@ void calculateAndSetVentilatorStatus()
                 mqttClient.publish((baseTopic + "log/status").c_str(), "initialized");
             }
         }
-
-        delay(500); // delay on first start to not query sensors to often
     }
 
     ESP.wdtFeed(); // feed the watchdog
-
-    float humidityInside = dhtInside.readHumidity() + CORRECTION_HUMIDITY_INSIDE;    // Read indoor humidity and store it under "h1"
-    float tempInside = dhtInside.readTemperature() + CORRECTION_TEMP_INSIDE;         // Read indoor temperature and store it under "t1"
-    float humidityOutside = dhtOutside.readHumidity() + CORRECTION_HUMIDITY_OUTSIDE; // Read outdoor humidity and store it under "h2"
-    float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;      // Read outdoor temperature and store it under "t2"
 
     //**** Print sensor values********
     Serial.println(getTimeString());
     Serial.print(F("sensor-inside: "));
     Serial.print(F("hunidity: "));
-    Serial.print(humidityInside);
+    Serial.print(sensorValues.humidityInside);
     Serial.print(F("%  temperature: "));
-    Serial.print(tempInside);
+    Serial.print(sensorValues.tempInside);
     Serial.println(F("°C"));
 
     Serial.print("sensor-outside: ");
     Serial.print(F("hunidity: "));
-    Serial.print(humidityOutside);
+    Serial.print(sensorValues.humidityOutside);
     Serial.print(F("%  temperature: "));
-    Serial.print(tempOutside);
+    Serial.print(sensorValues.tempOutside);
     Serial.println(F("°C"));
 
     //**** Calculate dew points********
     Serial.println(F("calculating dew point..."));
-    float dewPoint_inside = calculateDewpoint(tempInside, humidityInside);
-    float dewPoint_outside = calculateDewpoint(tempOutside, humidityOutside);
+    float dewPoint_inside = calculateDewpoint(sensorValues.tempInside, sensorValues.humidityInside);
+    float dewPoint_outside = calculateDewpoint(sensorValues.tempOutside, sensorValues.humidityOutside);
 
     //**** Print dew points********
     Serial.print(F("sensor-inside dew point: "));
@@ -275,20 +275,20 @@ void calculateAndSetVentilatorStatus()
     }
 
     // check overrides
-    if (ventilatorStatus && tempInside < tempInside_min)
+    if (ventilatorStatus && sensorValues.tempInside < tempInside_min)
     {
         ventilatorStatus = false;
-        ventilatorStatusReason = "tempInside < TEMPINSIDE_MIN: " + String(tempInside) + " < " + String(tempInside_min);
+        ventilatorStatusReason = "tempInside < TEMPINSIDE_MIN: " + String(sensorValues.tempInside) + " < " + String(tempInside_min);
     }
-    else if (ventilatorStatus && tempOutside < tempOutside_min)
+    else if (ventilatorStatus && sensorValues.tempOutside < tempOutside_min)
     {
         ventilatorStatus = false;
-        ventilatorStatusReason = "tempOutside < TEMPOUTSIDE_MIN: " + String(tempOutside) + " < " + String(tempOutside_min);
+        ventilatorStatusReason = "tempOutside < TEMPOUTSIDE_MIN: " + String(sensorValues.tempOutside) + " < " + String(tempOutside_min);
     }
-    else if (ventilatorStatus && tempOutside > tempOutside_max)
+    else if (ventilatorStatus && sensorValues.tempOutside > tempOutside_max)
     {
         ventilatorStatus = false;
-        ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX: " + String(tempOutside) + " > " + String(tempOutside_max);
+        ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX: " + String(sensorValues.tempOutside) + " > " + String(tempOutside_max);
     }
 
     if (requestedMode == "ON")
@@ -309,11 +309,11 @@ void calculateAndSetVentilatorStatus()
     // **** publish vlaues via MQTT ********
     if (mqttClient.connected())
     {
-        mqttClient.publish((baseTopic + "sensor-inside/temperature").c_str(), String(tempInside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-inside/humidity").c_str(), String(humidityInside, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-inside/temperature").c_str(), String(sensorValues.tempInside, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-inside/humidity").c_str(), String(sensorValues.humidityInside, 2).c_str());
         mqttClient.publish((baseTopic + "sensor-inside/dewpoint").c_str(), String(dewPoint_inside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-outside/temperature").c_str(), String(tempOutside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-outside/humidity").c_str(), String(humidityOutside, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-outside/temperature").c_str(), String(sensorValues.tempOutside, 2).c_str());
+        mqttClient.publish((baseTopic + "sensor-outside/humidity").c_str(), String(sensorValues.humidityOutside, 2).c_str());
         mqttClient.publish((baseTopic + "sensor-outside/dewpoint").c_str(), String(dewPoint_outside, 2).c_str());
         mqttClient.publish((baseTopic + "ventilation/reason").c_str(), ventilatorStatusReason.c_str());
         Serial.println(F("published to MQTT"));
@@ -326,16 +326,16 @@ void calculateAndSetVentilatorStatus()
  *
  * @return A SensorCheckResult struct indicating whether the sensors are working correctly and any error messages if applicable.
  */
-SensorCheckResult checkSensors()
+SensorValues getSensorValues()
 {
-    SensorCheckResult result = {true, ""};
+    SensorValues result = {0, 0, 0, 0, true, ""};
 
-    float humidityInside = dhtInside.readHumidity();   // Read indoor humidity and store it under "h1"
-    float tempInside = dhtInside.readTemperature();    // Read indoor temperature and store it under "t1"
-    float humidityOutside = dhtOutside.readHumidity(); // Read outdoor humidity and store it under "h2"
-    float tempOutside = dhtOutside.readTemperature();  // Read outdoor temperature and store it under "t2"
+    result.humidityInside = dhtInside.readHumidity();   // Read indoor humidity and store it under "h1"
+    result.tempInside = dhtInside.readTemperature();    // Read indoor temperature and store it under "t1"
+    result.humidityOutside = dhtOutside.readHumidity(); // Read outdoor humidity and store it under "h2"
+    result.tempOutside = dhtOutside.readTemperature();  // Read outdoor temperature and store it under "t2"
 
-    if (isnan(humidityInside) || isnan(tempInside) || humidityInside > 100 || humidityInside < 1 || tempInside < -40 || tempInside > 80)
+    if (isnan(result.humidityInside) || isnan(result.tempInside) || result.humidityInside > 100 || result.humidityInside < 1 || result.tempInside < -40 || result.tempInside > 80)
     {
         Serial.println(F("Error reading from sensor inside."));
         result.sensorsOK = false;
@@ -346,7 +346,7 @@ SensorCheckResult checkSensors()
         Serial.println(F("sensor inside OK"));
     }
 
-    if (isnan(humidityOutside) || isnan(tempOutside) || humidityOutside > 100 || humidityOutside < 1 || tempOutside < -40 || tempOutside > 80)
+    if (isnan(result.humidityOutside) || isnan(result.tempOutside) || result.humidityOutside > 100 || result.humidityOutside < 1 || result.tempOutside < -40 || result.tempOutside > 80)
     {
         Serial.println(F("Error reading from sensor outside."));
         result.sensorsOK = false;
