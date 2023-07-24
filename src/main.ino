@@ -182,8 +182,10 @@ void loop()
             if (i % 10 == 0)
                 mqttClient.publish((baseTopic + "log/heartbeat").c_str(), getTimeString().c_str(), true);
             mqttClient.loop(); // Check for MQTT messages
-            // if an MQTT command was received, stop sleeping and process the command
+            delay(10);         // <- fixes some issues with WiFi stability
         }
+
+        // if an MQTT command was received, stop sleeping and process the command
         if (stopSleeping)
         {
             stopSleeping = false;
@@ -522,6 +524,8 @@ void connectMQTTIfDisconnected()
         {
             Serial.println(F("Connecting to MQTT..."));
             mqttClient.begin(mqtt_server, mqtt_port, wifiClient);
+            mqttClient.setKeepAlive(20);
+            mqttClient.setTimeout(2000);
             mqttClient.onMessage(mqttCallback);
 
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
