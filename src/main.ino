@@ -1,14 +1,14 @@
-#include <Arduino.h>      // for Arduino functions
-#include "DHT.h"          // for DHT sensors
-#include <ESP8266WiFi.h>  // for WiFi
-#include <PubSubClient.h> // for MQTT
-#include <NTPClient.h>    // for time sync
-#include <WiFiUdp.h>      // for time sync
-#include <secrets.h>      // for WiFi and MQTT secrets
-#include <settings.h>     // for settings
-#include <ArduinoJson.h>  // for JSON parsing (config)
-#include "FS.h"           // for file system (config)
-#include <LittleFS.h>     // for file system (config)
+#include <Arduino.h>     // for Arduino functions
+#include "DHT.h"         // for DHT sensors
+#include <ESP8266WiFi.h> // for WiFi
+#include <MQTT.h>        // for MQTT
+#include <NTPClient.h>   // for time sync
+#include <WiFiUdp.h>     // for time sync
+#include <secrets.h>     // for WiFi and MQTT secrets
+#include <settings.h>    // for settings
+#include <ArduinoJson.h> // for JSON parsing (config)
+#include "FS.h"          // for file system (config)
+#include <LittleFS.h>    // for file system (config)
 
 #define RELAIS_ON HIGH // define the relais on value
 #define RELAIS_OFF LOW // define the relais off value
@@ -46,10 +46,11 @@ int tempInside_min = TEMPINSIDE_MIN;               // minimum temperature inside
 int tempOutside_min = TEMPOUTSIDE_MIN;             // minimum temperature outside to turn on the ventilator
 int tempOutside_max = TEMPOUTSIDE_MAX;             // maximum temperature outside to turn on the ventilator
 bool stopSleeping = false;                         // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
+bool configChanged = true;                         // used to keep track of whether the configuration has changed since the last loop
 WiFiEventHandler wifiConnectHandler;
 
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
+WiFiClient wifiClient;
+MQTTClient mqttClient;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, TIME_SERVER, 3600, 60000);
@@ -162,7 +163,11 @@ void loop()
 
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectMQTTIfDisconnected();         // Connect to MQTT if not connected do this at the beginning so it can run in the background
-    publishConfig();
+    if (configChanged)
+    {
+        publishConfig();
+        configChanged = false;
+    }
     calculateAndSetVentilatorStatus();
 
     Serial.println();
@@ -208,7 +213,7 @@ void calculateAndSetVentilatorStatus()
 
             if (mqttClient.connected())
             {
-                mqttClient.publish((baseTopic + "log/status").c_str(), ("sensors show errors: " + sensorValues.errorReasoun).c_str());
+                mqttClient.publish((baseTopic + "log/status").c_str(), ("sensors show errors: " + sensorValues.errorReasoun).c_str(), false, 1);
                 Serial.println(F("Error message sent"));
                 delay(500); // wait for message to be sent
             }
@@ -221,7 +226,7 @@ void calculateAndSetVentilatorStatus()
         {
             if (mqttClient.connected())
             {
-                mqttClient.publish((baseTopic + "log/status").c_str(), "initialized");
+                mqttClient.publish((baseTopic + "log/status").c_str(), "initialized", false, 1);
             }
         }
     }
@@ -309,13 +314,13 @@ void calculateAndSetVentilatorStatus()
     // **** publish vlaues via MQTT ********
     if (mqttClient.connected())
     {
-        mqttClient.publish((baseTopic + "sensor-inside/temperature").c_str(), String(sensorValues.tempInside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-inside/humidity").c_str(), String(sensorValues.humidityInside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-inside/dewpoint").c_str(), String(dewPoint_inside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-outside/temperature").c_str(), String(sensorValues.tempOutside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-outside/humidity").c_str(), String(sensorValues.humidityOutside, 2).c_str());
-        mqttClient.publish((baseTopic + "sensor-outside/dewpoint").c_str(), String(dewPoint_outside, 2).c_str());
-        mqttClient.publish((baseTopic + "ventilation/reason").c_str(), ventilatorStatusReason.c_str());
+        mqttClient.publish((baseTopic + "sensor-inside/temperature").c_str(), String(sensorValues.tempInside, 2).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "sensor-inside/humidity").c_str(), String(sensorValues.humidityInside, 2).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "sensor-inside/dewpoint").c_str(), String(dewPoint_inside, 2).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "sensor-outside/temperature").c_str(), String(sensorValues.tempOutside, 2).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "sensor-outside/humidity").c_str(), String(sensorValues.humidityOutside, 2).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "sensor-outside/dewpoint").c_str(), String(dewPoint_outside, 2).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "ventilation/reason").c_str(), ventilatorStatusReason.c_str(), false, 1);
         Serial.println(F("published to MQTT"));
     }
 }
@@ -393,8 +398,8 @@ void setVentilatorOn(bool running)
 
     if (mqttClient.connected())
     {
-        mqttClient.publish((baseTopic + "ventilation/state").c_str(), running ? "ON" : "OFF");
-        mqttClient.publish((baseTopic + "ventilation/stateNum").c_str(), running ? "1" : "0");
+        mqttClient.publish((baseTopic + "ventilation/state").c_str(), running ? "ON" : "OFF", false, 1);
+        mqttClient.publish((baseTopic + "ventilation/stateNum").c_str(), running ? "1" : "0", false, 1);
     }
 }
 
@@ -516,8 +521,8 @@ void connectMQTTIfDisconnected()
         if (mqttClient.connected() == false)
         {
             Serial.println(F("Connecting to MQTT..."));
-            mqttClient.setServer(mqtt_server, mqtt_port);
-            mqttClient.setCallback(mqttCallback);
+            mqttClient.begin(mqtt_server, mqtt_port, wifiClient);
+            mqttClient.onMessage(mqttCallback);
 
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
@@ -539,7 +544,7 @@ void connectMQTTIfDisconnected()
 
                         Serial.print(F("Startup time: "));
                         Serial.println(startupTime);
-                        mqttClient.publish((baseTopic + "log/startup").c_str(), startupTime.c_str(), true);
+                        mqttClient.publish((baseTopic + "log/startup").c_str(), startupTime.c_str(), true, 1);
                     }
                 }
             }
@@ -562,32 +567,27 @@ void connectMQTTIfDisconnected()
  * @param payload The payload of the received message.
  * @param length The length of the payload.
  */
-void mqttCallback(char *topic, byte *payload, unsigned int length)
+void mqttCallback(String &topic, String &payload)
 {
     Serial.print("Message arrived [");
     Serial.print(topic);
     Serial.print("] ");
-    String payloadStr = "";
-    for (unsigned int i = 0; i < length; i++)
-    {
-        payloadStr += (char)payload[i];
-    }
-    Serial.println(payloadStr);
+    Serial.println(payload);
 
-    if (strcmp(topic, (baseTopic + "config/mode/set").c_str()) == 0)
+    if (topic.equals(baseTopic + "config/mode/set"))
     {
         // code to execute if topic equals baseTopic + "mode/set"
-        if (payloadStr == "AUTO")
+        if (payload == "AUTO")
         {
             requestedMode = "AUTO";
             Serial.println("Mode set to AUTO");
         }
-        else if (payloadStr == "ON")
+        else if (payload == "ON")
         {
             requestedMode = "ON";
             Serial.println("Mode set to ON");
         }
-        else if (payloadStr == "OFF")
+        else if (payload == "OFF")
         {
             requestedMode = "OFF";
             Serial.println("Mode set to OFF");
@@ -599,50 +599,50 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
         }
         saveConfig();
     }
-    else if (strcmp(topic, (baseTopic + "config/deltaTPmin/set").c_str()) == 0)
+    else if (topic.equals(baseTopic + "config/deltaTPmin/set"))
     {
         // code to execute if topic equals baseTopic + "config/deltaTPmin/set"
-        min_delta = payloadStr.toInt();
+        min_delta = payload.toInt();
         saveConfig();
         Serial.print("min_delta set to ");
         Serial.println(min_delta);
     }
-    else if (strcmp(topic, (baseTopic + "config/hysteresis/set").c_str()) == 0)
+    else if (topic.equals(baseTopic + "config/hysteresis/set"))
     {
         // code to execute if topic equals baseTopic + "config/hysteresis/set"
-        hysteresis = payloadStr.toInt();
+        hysteresis = payload.toInt();
         saveConfig();
         Serial.print("hysteresis set to ");
         Serial.println(hysteresis);
     }
-    else if (strcmp(topic, (baseTopic + "config/tempInside_min/set").c_str()) == 0)
+    else if (topic.equals(baseTopic + "config/tempInside_min/set"))
     {
         // code to execute if topic equals baseTopic + "config/tempInside_min/set"
-        tempInside_min = payloadStr.toInt();
+        tempInside_min = payload.toInt();
         saveConfig();
         Serial.print("tempInside_min set to ");
         Serial.println(tempInside_min);
     }
-    else if (strcmp(topic, (baseTopic + "config/tempOutside_min/set").c_str()) == 0)
+    else if (topic.equals(baseTopic + "config/tempOutside_min/set"))
     {
         // code to execute if topic equals baseTopic + "config/tempOutside_min/set"
-        tempOutside_min = payloadStr.toInt();
+        tempOutside_min = payload.toInt();
         saveConfig();
         Serial.print("tempOutside_min set to ");
         Serial.println(tempOutside_min);
     }
-    else if (strcmp(topic, (baseTopic + "config/tempOutside_max/set").c_str()) == 0)
+    else if (topic.equals(baseTopic + "config/tempOutside_max/set"))
     {
         // code to execute if topic equals baseTopic + "config/tempOutside_max/set"
-        tempOutside_max = payloadStr.toInt();
+        tempOutside_max = payload.toInt();
         saveConfig();
         Serial.print("tempOutside_max set to ");
         Serial.println(tempOutside_max);
     }
-    else if (strcmp(topic, (baseTopic + "config/reset").c_str()) == 0)
+    else if (topic.equals(baseTopic + "config/reset"))
     {
         // code to execute if topic equals baseTopic + "config/reset"
-        if (payloadStr == "true" or payloadStr == "1")
+        if (payload == "true" or payload == "1")
         {
             resetConfig();
         }
@@ -661,12 +661,12 @@ void publishConfig()
 {
     if (mqttClient.connected())
     {
-        mqttClient.publish((baseTopic + "config/mode").c_str(), requestedMode.c_str());
-        mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str());
-        mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str());
-        mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str());
-        mqttClient.publish((baseTopic + "config/tempOutside_min").c_str(), String(tempOutside_min).c_str());
-        mqttClient.publish((baseTopic + "config/tempOutside_max").c_str(), String(tempOutside_max).c_str());
+        mqttClient.publish((baseTopic + "config/mode").c_str(), requestedMode.c_str(), false, 1);
+        mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "config/tempOutside_min").c_str(), String(tempOutside_min).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "config/tempOutside_max").c_str(), String(tempOutside_max).c_str(), false, 1);
         Serial.println("config published");
     }
 }
