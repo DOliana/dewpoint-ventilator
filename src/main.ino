@@ -217,6 +217,8 @@ void calculateAndSetVentilatorStatus()
                 mqttClient.publish((baseTopic + "log/status").c_str(), "initialized");
             }
         }
+
+        delay(500); // delay on first start to not query sensors to often
     }
 
     ESP.wdtFeed(); // feed the watchdog
