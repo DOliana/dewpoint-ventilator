@@ -197,7 +197,7 @@ void loop()
 void calculateAndSetVentilatorStatus()
 {
     SensorValues sensorValues = getSensorValues();
-    
+
     if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
     {
         errorOnInitialize = sensorValues.sensorsOK == false;
@@ -337,7 +337,13 @@ SensorValues getSensorValues()
 
     if (isnan(result.humidityInside) || isnan(result.tempInside) || result.humidityInside > 100 || result.humidityInside < 1 || result.tempInside < -40 || result.tempInside > 80)
     {
-        Serial.println(F("Error reading from sensor inside."));
+        Serial.println(F("Error reading from sensor inside:"));
+        Serial.print(F("hunidity: "));
+        Serial.print(result.humidityInside);
+        Serial.print(F("%  temperature: "));
+        Serial.print(result.tempInside);
+        Serial.println(F("°C"));
+        Serial.println(result.humidityInside);
         result.sensorsOK = false;
         result.errorReasoun = "Error reading from sensor inside. ";
     }
@@ -349,6 +355,11 @@ SensorValues getSensorValues()
     if (isnan(result.humidityOutside) || isnan(result.tempOutside) || result.humidityOutside > 100 || result.humidityOutside < 1 || result.tempOutside < -40 || result.tempOutside > 80)
     {
         Serial.println(F("Error reading from sensor outside."));
+        Serial.print(F("hunidity: "));
+        Serial.print(result.humidityOutside);
+        Serial.print(F("%  temperature: "));
+        Serial.print(result.tempOutside);
+        Serial.println(F("°C"));
         result.sensorsOK = false;
         result.errorReasoun.concat("Error reading from sensor outside. ");
     }
@@ -806,7 +817,7 @@ bool loadConfig()
     tempOutside_min = doc["tempOutside_min"].as<float>();
     tempOutside_max = doc["tempOutside_max"].as<float>();
     configFile.close();
-    Serial.println("Config loaded from file");
+    Serial.println("Config loaded from file:");
     Serial.println("- mode: " + requestedMode);
     Serial.println("- deltaTPmin: " + String(min_delta));
     Serial.println("- hysteresis: " + String(hysteresis));
