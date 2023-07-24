@@ -584,11 +584,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
             requestedMode = "AUTO";
             Serial.println("Unknown mode");
         }
+        saveConfig();
     }
     else if (strcmp(topic, (baseTopic + "config/deltaTPmin/set").c_str()) == 0)
     {
         // code to execute if topic equals baseTopic + "config/deltaTPmin/set"
         min_delta = payloadStr.toInt();
+        saveConfig();
         Serial.print("min_delta set to ");
         Serial.println(min_delta);
     }
@@ -596,6 +598,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     {
         // code to execute if topic equals baseTopic + "config/hysteresis/set"
         hysteresis = payloadStr.toInt();
+        saveConfig();
         Serial.print("hysteresis set to ");
         Serial.println(hysteresis);
     }
@@ -603,6 +606,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     {
         // code to execute if topic equals baseTopic + "config/tempInside_min/set"
         tempInside_min = payloadStr.toInt();
+        saveConfig();
         Serial.print("tempInside_min set to ");
         Serial.println(tempInside_min);
     }
@@ -610,6 +614,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     {
         // code to execute if topic equals baseTopic + "config/tempOutside_min/set"
         tempOutside_min = payloadStr.toInt();
+        saveConfig();
         Serial.print("tempOutside_min set to ");
         Serial.println(tempOutside_min);
     }
@@ -617,6 +622,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     {
         // code to execute if topic equals baseTopic + "config/tempOutside_max/set"
         tempOutside_max = payloadStr.toInt();
+        saveConfig();
         Serial.print("tempOutside_max set to ");
         Serial.println(tempOutside_max);
     }
