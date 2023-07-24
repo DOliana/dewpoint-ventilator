@@ -13,8 +13,6 @@
 #define RELAIS_ON HIGH // define the relais on value
 #define RELAIS_OFF LOW // define the relais off value
 
-const char *config_path = "/config.json";
-
 // ********* WiFi + MQTT setup (values defined in secret.h) ******
 const char *mqtt_server = SECRET_MQTT_SERVER;
 const char *mqtt_user = SECRET_MQTT_USER;
@@ -114,6 +112,13 @@ void setup()
     Serial.print("MQTT base topic set: ");
     Serial.println(baseTopic);
 
+    // mount filesystem for config file
+    Serial.println("Mounting FS...");
+    if (!LittleFS.begin())
+    {
+        Serial.println("Failed to mount file system");
+    }
+
     // load config from file if it exists
     if (loadConfig() == false)
     {
@@ -121,6 +126,9 @@ void setup()
         Serial.println("Failed to load config from file - saving default values in config");
         resetConfig();
     }
+
+    Serial.println("Setup complete");
+    Serial.println();
 }
 
 /**
@@ -219,6 +227,7 @@ void calculateAndSetVentilatorStatus()
     float tempOutside = dhtOutside.readTemperature() + CORRECTION_TEMP_OUTSIDE;      // Read outdoor temperature and store it under "t2"
 
     //**** Print sensor values********
+    Serial.println(getTimeString());
     Serial.print(F("sensor-inside: "));
     Serial.print(F("hunidity: "));
     Serial.print(humidityInside);
@@ -742,7 +751,7 @@ bool saveConfig()
     doc["tempOutside_max"] = tempOutside_max;
 
     // Open file for writing
-    File configFile = LittleFS.open(config_path, "w");
+    File configFile = LittleFS.open("/config.json", "w");
     if (!configFile)
     {
         Serial.println("Failed to open config file for writing");
@@ -751,6 +760,8 @@ bool saveConfig()
 
     // Serialize JSON to file
     serializeJson(doc, configFile);
+    configFile.close();
+    Serial.println("Config saved to file");
     return true;
 }
 
@@ -763,7 +774,7 @@ bool saveConfig()
  */
 bool loadConfig()
 {
-    File configFile = LittleFS.open(config_path, "r");
+    File configFile = LittleFS.open("/config.json", "r");
     if (!configFile)
     {
         Serial.println("Failed to open config file");
@@ -775,7 +786,7 @@ bool loadConfig()
 
     if (error)
     {
-        Serial.print(F("Failed to open & deserialize config file: "));
+        Serial.print(F("Failed to deserialize config file: "));
         Serial.println(error.f_str());
         return false;
     }
@@ -786,6 +797,14 @@ bool loadConfig()
     tempInside_min = doc["tempInside_min"].as<float>();
     tempOutside_min = doc["tempOutside_min"].as<float>();
     tempOutside_max = doc["tempOutside_max"].as<float>();
+    configFile.close();
+    Serial.println("Config loaded from file");
+    Serial.println("- mode: " + requestedMode);
+    Serial.println("- deltaTPmin: " + String(min_delta));
+    Serial.println("- hysteresis: " + String(hysteresis));
+    Serial.println("- tempInside_min: " + String(tempInside_min));
+    Serial.println("- tempOutside_min: " + String(tempOutside_min));
+    Serial.println("- tempOutside_max: " + String(tempOutside_max));
 
     return true;
 }
