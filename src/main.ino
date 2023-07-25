@@ -184,7 +184,7 @@ void loop()
                 mqttClient.publish(baseTopic + "log/heartbeat", getTimeString(), true, 0);
             mqttClient.loop(); // Check for MQTT messages
             delay(10);         // <- fixes some issues with WiFi stability
-        } else {
+        } else if(i % 10 == 0) {
             Serial.println("MQTT not connected - no heartbeat sent");
         }
 
