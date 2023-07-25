@@ -266,19 +266,19 @@ void calculateAndSetVentilatorStatus()
     Serial.println(F("°C  "));
 
     //**** Calculate difference between dew points********
-    float deltaTP = dewPoint_inside - dewPoint_outside;
+    float deltaDP = dewPoint_inside - dewPoint_outside;
 
     //**** decide if ventilator should run or not ********
     String ventilatorStatusReason = "Hysteresis phase";
-    if (deltaTP > (min_delta + hysteresis))
+    if (deltaDP > (min_delta + hysteresis))
     {
         ventilatorStatus = true;
-        ventilatorStatusReason = "DeltaTP > (MIN_Delta + HYSTERESIS): " + String(deltaTP) + " > " + String(min_delta) + " + " + String(hysteresis);
+        ventilatorStatusReason = "DeltaDP > (MIN_Delta + HYSTERESIS): " + String(deltaDP) + " > " + String(min_delta) + " + " + String(hysteresis);
     }
-    else if (deltaTP <= (min_delta))
+    else if (deltaDP <= (min_delta))
     {
         ventilatorStatus = false;
-        ventilatorStatusReason = "DeltaTP < (MIN_Delta): " + String(deltaTP) + " < " + String(min_delta);
+        ventilatorStatusReason = "DeltaDP < (MIN_Delta): " + String(deltaDP) + " < " + String(min_delta);
     }
 
     // check overrides
@@ -532,7 +532,7 @@ void connectMQTTIfDisconnected()
             {
                 Serial.println(F("MQTT connected"));
                 mqttClient.subscribe((baseTopic + "config/mode/set").c_str());
-                mqttClient.subscribe((baseTopic + "config/deltaTPmin/set").c_str());
+                mqttClient.subscribe((baseTopic + "config/deltaDPmin/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/hysteresis/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempInside_min/set").c_str());
                 mqttClient.subscribe((baseTopic + "config/tempOutside_min/set").c_str());
@@ -603,9 +603,9 @@ void mqttCallback(String &topic, String &payload)
         }
         saveConfig();
     }
-    else if (topic.equals(baseTopic + "config/deltaTPmin/set"))
+    else if (topic.equals(baseTopic + "config/deltaDPmin/set"))
     {
-        // code to execute if topic equals baseTopic + "config/deltaTPmin/set"
+        // code to execute if topic equals baseTopic + "config/deltaDPmin/set"
         min_delta = payload.toInt();
         saveConfig();
         Serial.print("min_delta set to ");
@@ -666,7 +666,7 @@ void publishConfig()
     if (mqttClient.connected())
     {
         mqttClient.publish((baseTopic + "config/mode").c_str(), requestedMode.c_str(), false, 1);
-        mqttClient.publish((baseTopic + "config/deltaTPmin").c_str(), String(min_delta).c_str(), false, 1);
+        mqttClient.publish((baseTopic + "config/deltaDPmin").c_str(), String(min_delta).c_str(), false, 1);
         mqttClient.publish((baseTopic + "config/hysteresis").c_str(), String(hysteresis).c_str(), false, 1);
         mqttClient.publish((baseTopic + "config/tempInside_min").c_str(), String(tempInside_min).c_str(), false, 1);
         mqttClient.publish((baseTopic + "config/tempOutside_min").c_str(), String(tempOutside_min).c_str(), false, 1);
@@ -767,7 +767,7 @@ bool saveConfig()
 {
     StaticJsonDocument<200> doc;
     doc["mode"] = requestedMode;
-    doc["deltaTPmin"] = min_delta;
+    doc["deltaDPmin"] = min_delta;
     doc["hysteresis"] = hysteresis;
     doc["tempInside_min"] = tempInside_min;
     doc["tempOutside_min"] = tempOutside_min;
@@ -815,7 +815,7 @@ bool loadConfig()
     }
 
     requestedMode = doc["mode"].as<String>();
-    min_delta = doc["deltaTPmin"].as<float>();
+    min_delta = doc["deltaDPmin"].as<float>();
     hysteresis = doc["hysteresis"].as<float>();
     tempInside_min = doc["tempInside_min"].as<float>();
     tempOutside_min = doc["tempOutside_min"].as<float>();
@@ -823,7 +823,7 @@ bool loadConfig()
     configFile.close();
     Serial.println("Config loaded from file:");
     Serial.println("- mode: " + requestedMode);
-    Serial.println("- deltaTPmin: " + String(min_delta));
+    Serial.println("- deltaDPmin: " + String(min_delta));
     Serial.println("- hysteresis: " + String(hysteresis));
     Serial.println("- tempInside_min: " + String(tempInside_min));
     Serial.println("- tempOutside_min: " + String(tempOutside_min));

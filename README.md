@@ -45,7 +45,7 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 ### status topics
 
 - `BASETOPIC/config/mode`: Mode of the dewpoint ventilator. Can be ON, OFF, AUTO.
-- `BASETOPIC/config/deltaTPmin`: minimum difference between dewpoints before ventilator is turned on
+- `BASETOPIC/config/deltaDPmin`: minimum difference between dewpoints before ventilator is turned on
 - `BASETOPIC/config/hysteresis`: distance between switch-on and switch-off point
 - `BASETOPIC/config/tempInside_min`: minimum inside temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_min`: minimum outdoor temperature at which ventilation is activated
@@ -59,7 +59,7 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 ### command (config) topics
 
 - `BASETOPIC/config/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of ON, OFF, AUTO. This setting is not persisted across reboots and defaults to AUTO.
-- `BASETOPIC/config/deltaTPmin/set`: minimum difference between dewpoints before ventilator is turned on
+- `BASETOPIC/config/deltaDPmin/set`: minimum difference between dewpoints before ventilator is turned on
 - `BASETOPIC/config/hysteresis/set`: distance between switch-on and switch-off point
 - `BASETOPIC/config/tempInside_min/set`: minimum inside temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_min/set`: minimum outdoor temperature at which ventilation is activated
