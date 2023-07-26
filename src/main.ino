@@ -668,12 +668,12 @@ bool publishConfig()
 {
     if (mqttClient.connected())
     {
-        mqttClient.publish(baseTopic + "config/mode", requestedMode, false, 1);
-        mqttClient.publish(baseTopic + "config/deltaDPmin", String(min_delta), false, 1);
-        mqttClient.publish(baseTopic + "config/hysteresis", String(hysteresis), false, 1);
-        mqttClient.publish(baseTopic + "config/tempInside_min", String(tempInside_min), false, 1);
-        mqttClient.publish(baseTopic + "config/tempOutside_min", String(tempOutside_min), false, 1);
-        mqttClient.publish(baseTopic + "config/tempOutside_max", String(tempOutside_max), false, 1);
+        mqttClient.publish(baseTopic + "config/mode", requestedMode, true, 1);
+        mqttClient.publish(baseTopic + "config/deltaDPmin", String(min_delta), true, 1);
+        mqttClient.publish(baseTopic + "config/hysteresis", String(hysteresis), true, 1);
+        mqttClient.publish(baseTopic + "config/tempInside_min", String(tempInside_min), true, 1);
+        mqttClient.publish(baseTopic + "config/tempOutside_min", String(tempOutside_min), true, 1);
+        mqttClient.publish(baseTopic + "config/tempOutside_max", String(tempOutside_max), true, 1);
         Serial.println("config published");
         return true;
     }
