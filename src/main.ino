@@ -184,7 +184,9 @@ void loop()
                 mqttClient.publish(baseTopic + "log/heartbeat", getTimeString(), true, 0);
             mqttClient.loop(); // Check for MQTT messages
             delay(10);         // <- fixes some issues with WiFi stability
-        } else if(i % 10 == 0) {
+        }
+        else if (i % 10 == 0)
+        {
             Serial.println("MQTT not connected - no heartbeat sent");
         }
 
@@ -534,13 +536,13 @@ void connectMQTTIfDisconnected()
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
                 Serial.println(F("MQTT connected"));
-                mqttClient.subscribe(baseTopic + "config/mode/set");
-                mqttClient.subscribe(baseTopic + "config/deltaDPmin/set");
-                mqttClient.subscribe(baseTopic + "config/hysteresis/set");
-                mqttClient.subscribe(baseTopic + "config/tempInside_min/set");
-                mqttClient.subscribe(baseTopic + "config/tempOutside_min/set");
-                mqttClient.subscribe(baseTopic + "config/tempOutside_max/set");
-                mqttClient.subscribe(baseTopic + "config/reset");
+                mqttClient.subscribe(baseTopic + "config/mode/set", 1);
+                mqttClient.subscribe(baseTopic + "config/deltaDPmin/set", 1);
+                mqttClient.subscribe(baseTopic + "config/hysteresis/set", 1);
+                mqttClient.subscribe(baseTopic + "config/tempInside_min/set", 1);
+                mqttClient.subscribe(baseTopic + "config/tempOutside_min/set", 1);
+                mqttClient.subscribe(baseTopic + "config/tempOutside_max/set", 1);
+                mqttClient.subscribe(baseTopic + "config/reset", 1);
                 Serial.println("command topics subscribed");
 
                 if (startupTime == NULL)
