@@ -170,6 +170,7 @@ void loop()
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectMQTTIfDisconnected();         // Connect to MQTT if not connected do this at the beginning so it can run in the background
     publishConfigIfChanded();
+    stopSleeping = false; // wifi connection resets this during startup. if we are here we do not need it.
     calculateAndSetVentilatorStatus();
 
     Serial.println();
@@ -244,14 +245,14 @@ void calculateAndSetVentilatorStatus()
     //**** Print sensor values********
     Serial.println(getTimeString());
     Serial.print(F("sensor-inside: "));
-    Serial.print(F("hunidity: "));
+    Serial.print(F("humidity: "));
     Serial.print(sensorValues.humidityInside);
     Serial.print(F("%  temperature: "));
     Serial.print(sensorValues.tempInside);
     Serial.println(F("°C"));
 
     Serial.print("sensor-outside: ");
-    Serial.print(F("hunidity: "));
+    Serial.print(F("humidity: "));
     Serial.print(sensorValues.humidityOutside);
     Serial.print(F("%  temperature: "));
     Serial.print(sensorValues.tempOutside);
@@ -351,7 +352,7 @@ SensorValues getSensorValues()
     if (isnan(result.humidityInside) || isnan(result.tempInside) || result.humidityInside > 100 || result.humidityInside < 1 || result.tempInside < -40 || result.tempInside > 80)
     {
         Serial.println(F("Error reading from sensor inside:"));
-        Serial.print(F("hunidity: "));
+        Serial.print(F("humidity: "));
         Serial.print(result.humidityInside);
         Serial.print(F("%  temperature: "));
         Serial.print(result.tempInside);
@@ -368,7 +369,7 @@ SensorValues getSensorValues()
     if (isnan(result.humidityOutside) || isnan(result.tempOutside) || result.humidityOutside > 100 || result.humidityOutside < 1 || result.tempOutside < -40 || result.tempOutside > 80)
     {
         Serial.println(F("Error reading from sensor outside."));
-        Serial.print(F("hunidity: "));
+        Serial.print(F("humidity: "));
         Serial.print(result.humidityOutside);
         Serial.print(F("%  temperature: "));
         Serial.print(result.tempOutside);
@@ -656,6 +657,8 @@ void mqttCallback(String &topic, String &payload)
         {
             resetConfig();
         }
+    } else {
+        Serial.println("Unknown topic: " + topic);
     }
 
     stopSleeping = true;
@@ -678,6 +681,7 @@ bool publishConfigValueIfChanged(short configMapIndex, String valueName, String 
         {
             configChangedMap[configMapIndex] = !mqttClient.publish(baseTopic + "config/" + valueName, value, true, 1);
             result = configChangedMap[configMapIndex];
+            Serial.println("config value published for " + valueName + ". result: " + (!result ? "true" : "false"));
         }
         else
         {
@@ -695,16 +699,13 @@ bool publishConfigValueIfChanged(short configMapIndex, String valueName, String 
  */
 void publishConfigIfChanded()
 {
-    bool success = true;
     // only publish if value has changed
-    success &= publishConfigValueIfChanged(CONFIG_IDX_MODE, "mode", requestedMode);
-    success &= publishConfigValueIfChanged(CONFIG_IDX_MIN_DELTA, "deltaDPmin", String(min_delta));
-    success &= publishConfigValueIfChanged(CONFIG_IDX_HYSTERESIS, "hysteresis", String(hysteresis));
-    success &= publishConfigValueIfChanged(CONFIG_IDX_TEMPINSIDE_MIN, "tempInside_min", String(tempInside_min));
-    success &= publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MIN, "tempOutside_min", String(tempOutside_min));
-    success &= publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MAX, "tempOutside_max", String(tempOutside_max));
-
-    Serial.println("config published: " + success);
+    publishConfigValueIfChanged(CONFIG_IDX_MODE, "mode", requestedMode);
+    publishConfigValueIfChanged(CONFIG_IDX_MIN_DELTA, "deltaDPmin", String(min_delta));
+    publishConfigValueIfChanged(CONFIG_IDX_HYSTERESIS, "hysteresis", String(hysteresis));
+    publishConfigValueIfChanged(CONFIG_IDX_TEMPINSIDE_MIN, "tempInside_min", String(tempInside_min));
+    publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MIN, "tempOutside_min", String(tempOutside_min));
+    publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MAX, "tempOutside_max", String(tempOutside_max));
 }
 
 /**
