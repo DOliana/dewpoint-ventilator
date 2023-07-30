@@ -9,6 +9,7 @@
 #include <ArduinoJson.h> // for JSON parsing (config)
 #include "FS.h"          // for file system (config)
 #include <LittleFS.h>    // for file system (config)
+#include <iterator>      // for map
 
 #define RELAIS_ON HIGH // define the relais on value
 #define RELAIS_OFF LOW // define the relais off value
@@ -33,20 +34,26 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-long unsigned maxMilliSecondsWithoutWiFi = 300000; // maximum time without wifi after which we perform a full reboot
-long unsigned lastTimeWiFiOK = ULONG_MAX;          // used to keep track of the last time the WiFi was connected
-bool errorOnInitialize = true;                     // used to keep track of whether the sensors are working correctly on first start
-String startupTime;                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
-bool ventilatorStatus = false;                     // needs to be a global variable, so the state is saved across loops
-String baseTopic = "dewppoint-ventilator";         // used to store the MQTT base topic (can be an empty string if no base topic is desired)
-String requestedMode = "AUTO";                     // default mode after reboot is AUTO
-int min_delta = MIN_Delta;                         // minimum difference between the dew points inside and outside to turn on the ventilator
-int hysteresis = HYSTERESIS;                       // hysteresis for turning off the ventilator
-int tempInside_min = TEMPINSIDE_MIN;               // minimum temperature inside to turn on the ventilator
-int tempOutside_min = TEMPOUTSIDE_MIN;             // minimum temperature outside to turn on the ventilator
-int tempOutside_max = TEMPOUTSIDE_MAX;             // maximum temperature outside to turn on the ventilator
-bool stopSleeping = false;                         // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
-bool configChanged = true;                         // used to keep track of whether the configuration has changed since the last loop
+long unsigned maxMilliSecondsWithoutWiFi = 300000;               // maximum time without wifi after which we perform a full reboot
+long unsigned lastTimeWiFiOK = ULONG_MAX;                        // used to keep track of the last time the WiFi was connected
+bool errorOnInitialize = true;                                   // used to keep track of whether the sensors are working correctly on first start
+String startupTime;                                              // startup time - if set its been sent. Used to prevent sending the startup message multiple times
+bool ventilatorStatus = false;                                   // needs to be a global variable, so the state is saved across loops
+String baseTopic = "dewppoint-ventilator";                       // used to store the MQTT base topic (can be an empty string if no base topic is desired)
+String requestedMode = "AUTO";                                   // default mode after reboot is AUTO
+int min_delta = MIN_Delta;                                       // minimum difference between the dew points inside and outside to turn on the ventilator
+int hysteresis = HYSTERESIS;                                     // hysteresis for turning off the ventilator
+int tempInside_min = TEMPINSIDE_MIN;                             // minimum temperature inside to turn on the ventilator
+int tempOutside_min = TEMPOUTSIDE_MIN;                           // minimum temperature outside to turn on the ventilator
+int tempOutside_max = TEMPOUTSIDE_MAX;                           // maximum temperature outside to turn on the ventilator
+bool stopSleeping = false;                                       // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
+bool configChangedMap[6] = {true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
+#define CONFIG_IDX_MODE 0
+#define CONFIG_IDX_MIN_DELTA 1
+#define CONFIG_IDX_HYSTERESIS 2
+#define CONFIG_IDX_TEMPINSIDE_MIN 3
+#define CONFIG_IDX_TEMPOUTSIDE_MIN 4
+#define CONFIG_IDX_TEMPOUTSIDE_MAX 5
 WiFiEventHandler wifiConnectHandler;
 
 WiFiClient wifiClient;
@@ -162,13 +169,7 @@ void loop()
 
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectMQTTIfDisconnected();         // Connect to MQTT if not connected do this at the beginning so it can run in the background
-    if (configChanged)
-    {
-        if (publishConfig())
-        {
-            configChanged = false;
-        }
-    }
+    publishConfigIfChanded();
     calculateAndSetVentilatorStatus();
 
     Serial.println();
@@ -606,11 +607,13 @@ void mqttCallback(String &topic, String &payload)
             requestedMode = "AUTO";
             Serial.println("Unknown mode");
         }
+        configChangedMap[CONFIG_IDX_MODE] = true;
         saveConfig();
     }
     else if (topic.equals(baseTopic + "config/deltaDPmin/set"))
     {
         min_delta = payload.toInt();
+        configChangedMap[CONFIG_IDX_MIN_DELTA] = true;
         saveConfig();
         Serial.print("min_delta set to ");
         Serial.println(min_delta);
@@ -618,6 +621,7 @@ void mqttCallback(String &topic, String &payload)
     else if (topic.equals(baseTopic + "config/hysteresis/set"))
     {
         hysteresis = payload.toInt();
+        configChangedMap[CONFIG_IDX_HYSTERESIS] = true;
         saveConfig();
         Serial.print("hysteresis set to ");
         Serial.println(hysteresis);
@@ -625,6 +629,7 @@ void mqttCallback(String &topic, String &payload)
     else if (topic.equals(baseTopic + "config/tempInside_min/set"))
     {
         tempInside_min = payload.toInt();
+        configChangedMap[CONFIG_IDX_TEMPINSIDE_MIN] = true;
         saveConfig();
         Serial.print("tempInside_min set to ");
         Serial.println(tempInside_min);
@@ -632,6 +637,7 @@ void mqttCallback(String &topic, String &payload)
     else if (topic.equals(baseTopic + "config/tempOutside_min/set"))
     {
         tempOutside_min = payload.toInt();
+        configChangedMap[CONFIG_IDX_TEMPOUTSIDE_MIN] = true;
         saveConfig();
         Serial.print("tempOutside_min set to ");
         Serial.println(tempOutside_min);
@@ -639,6 +645,7 @@ void mqttCallback(String &topic, String &payload)
     else if (topic.equals(baseTopic + "config/tempOutside_max/set"))
     {
         tempOutside_max = payload.toInt();
+        configChangedMap[CONFIG_IDX_TEMPOUTSIDE_MAX] = true;
         saveConfig();
         Serial.print("tempOutside_max set to ");
         Serial.println(tempOutside_max);
@@ -655,30 +662,49 @@ void mqttCallback(String &topic, String &payload)
 }
 
 /**
+ * Publishes a configuration value if it has changed since the last publish.
+ *
+ * @param configMapIndex The index of the configuration value in the configuration map.
+ * @param valueName The name of the configuration value.
+ * @param value The new value of the configuration value.
+ * @return True if the configuration value was published, false otherwise.
+ */
+bool publishConfigValueIfChanged(short configMapIndex, String valueName, String value)
+{
+    bool result = true;
+    if (configChangedMap[configMapIndex])
+    {
+        if (mqttClient.connected())
+        {
+            configChangedMap[configMapIndex] = !mqttClient.publish(baseTopic + "config/" + valueName, value, true, 1);
+            result = configChangedMap[configMapIndex];
+        }
+        else
+        {
+            result = false;
+        }
+    }
+    return result;
+}
+
+/**
  * This function publishes the current configuration values to the MQTT broker.
  * It publishes the requested mode, minimum delta temperature, hysteresis, minimum inside temperature,
  * minimum outside temperature, and maximum outside temperature.
  * If the MQTT client is not connected, this function does nothing.
  */
-bool publishConfig()
+void publishConfigIfChanded()
 {
-    if (mqttClient.connected())
-    {
-        bool success = true;
-        success = success && mqttClient.publish(baseTopic + "config/mode", requestedMode, true, 1);
-        success = success && mqttClient.publish(baseTopic + "config/deltaDPmin", String(min_delta), true, 1);
-        success = success && mqttClient.publish(baseTopic + "config/hysteresis", String(hysteresis), true, 1);
-        success = success && mqttClient.publish(baseTopic + "config/tempInside_min", String(tempInside_min), true, 1);
-        success = success && mqttClient.publish(baseTopic + "config/tempOutside_min", String(tempOutside_min), true, 1);
-        success = success && mqttClient.publish(baseTopic + "config/tempOutside_max", String(tempOutside_max), true, 1);
-        Serial.println("config published: " + success);
-        return success;
-    }
-    else
-    {
-        Serial.println("config not published - MQTT not connected");
-        return false;
-    }
+    bool success = true;
+    // only publish if value has changed
+    success &= publishConfigValueIfChanged(CONFIG_IDX_MODE, "mode", requestedMode);
+    success &= publishConfigValueIfChanged(CONFIG_IDX_MIN_DELTA, "deltaDPmin", String(min_delta));
+    success &= publishConfigValueIfChanged(CONFIG_IDX_HYSTERESIS, "hysteresis", String(hysteresis));
+    success &= publishConfigValueIfChanged(CONFIG_IDX_TEMPINSIDE_MIN, "tempInside_min", String(tempInside_min));
+    success &= publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MIN, "tempOutside_min", String(tempOutside_min));
+    success &= publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MAX, "tempOutside_max", String(tempOutside_max));
+
+    Serial.println("config published: " + success);
 }
 
 /**
@@ -791,7 +817,6 @@ bool saveConfig()
     serializeJson(doc, configFile);
     configFile.close();
     Serial.println("Config saved to file");
-    configChanged = true;
     return true;
 }
 
@@ -853,5 +878,11 @@ void resetConfig()
     tempOutside_min = TEMPOUTSIDE_MIN;
     tempOutside_max = TEMPOUTSIDE_MAX;
     Serial.println("Config reset to default values");
+    // mark all config values as changed
+    for (size_t i = 0; i < sizeof(configChangedMap); i++)
+    {
+        configChangedMap[i] = true;
+    }
+
     saveConfig();
 }
