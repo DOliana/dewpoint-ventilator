@@ -71,4 +71,5 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 - don't put the outside sensor close to where the ventilator is. In my case I had it about 50cm from the ventilator and as soon as the ventilator ran, the outside temperature was strongly affected by the air coming from the ventilator.
 - think about how to easily update your software during testing (I ran into the basement with my laptop from the 2nd floor about 100 times) -> will look at OTA in the future
 - ESP8266 seems to be pretty resistant to interferences. It worked without the preventing measures mentioned in the original article (I only put the 1000 µF capacitor between + and - and left out all other capacitors & resistors that were meant to help with interferences)
-- It's really hard to debug issues that come up after longer operation (for some reason I see restarts every few days and have no idea what it is. My solution for now: design everything in a way that restarts are not a problem)
+- It's really hard to debug issues that come up after longer operation (for some reason I see restarts every few > 5 days and have no idea what it is. My solution for now: design everything in a way that restarts are not a problem)
+- the longer I look at code the more ideas I get :-)
