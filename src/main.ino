@@ -532,6 +532,7 @@ void connectMQTTIfDisconnected()
             mqttClient.setKeepAlive(20);
             mqttClient.setTimeout(2000);
             mqttClient.onMessage(mqttCallback);
+            mqttClient.setCleanSession(false); // ensure that the device receives all messages after reconnecting
 
             if (mqttClient.connect(mqtt_clientID, mqtt_user, mqtt_password))
             {
