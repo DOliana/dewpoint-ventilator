@@ -585,7 +585,6 @@ void mqttCallback(String &topic, String &payload)
 
     if (topic.equals(baseTopic + "config/mode/set"))
     {
-        // code to execute if topic equals baseTopic + "mode/set"
         if (payload == "AUTO")
         {
             requestedMode = "AUTO";
@@ -610,7 +609,6 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/deltaDPmin/set"))
     {
-        // code to execute if topic equals baseTopic + "config/deltaDPmin/set"
         min_delta = payload.toInt();
         saveConfig();
         Serial.print("min_delta set to ");
@@ -618,7 +616,6 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/hysteresis/set"))
     {
-        // code to execute if topic equals baseTopic + "config/hysteresis/set"
         hysteresis = payload.toInt();
         saveConfig();
         Serial.print("hysteresis set to ");
@@ -626,7 +623,6 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/tempInside_min/set"))
     {
-        // code to execute if topic equals baseTopic + "config/tempInside_min/set"
         tempInside_min = payload.toInt();
         saveConfig();
         Serial.print("tempInside_min set to ");
@@ -634,7 +630,6 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/tempOutside_min/set"))
     {
-        // code to execute if topic equals baseTopic + "config/tempOutside_min/set"
         tempOutside_min = payload.toInt();
         saveConfig();
         Serial.print("tempOutside_min set to ");
@@ -642,7 +637,6 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/tempOutside_max/set"))
     {
-        // code to execute if topic equals baseTopic + "config/tempOutside_max/set"
         tempOutside_max = payload.toInt();
         saveConfig();
         Serial.print("tempOutside_max set to ");
@@ -650,7 +644,6 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/reset"))
     {
-        // code to execute if topic equals baseTopic + "config/reset"
         if (payload == "true" or payload == "1")
         {
             resetConfig();
