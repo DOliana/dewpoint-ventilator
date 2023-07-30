@@ -36,7 +36,6 @@ const char *wifi_hostname = mqtt_clientID;
 
 long unsigned maxMilliSecondsWithoutWiFi = 300000;               // maximum time without wifi after which we perform a full reboot
 long unsigned lastTimeWiFiOK = ULONG_MAX;                        // used to keep track of the last time the WiFi was connected
-bool errorOnInitialize = true;                                   // used to keep track of whether the sensors are working correctly on first start
 String startupTime;                                              // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;                                   // needs to be a global variable, so the state is saved across loops
 String baseTopic = "dewppoint-ventilator";                       // used to store the MQTT base topic (can be an empty string if no base topic is desired)
@@ -166,6 +165,10 @@ void loop()
     {
         ESP.restart();
     }
+    else
+    {
+        Serial.println("WiFi not connected for " + String(millis() - lastTimeWiFiOK) + "ms");
+    }
 
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectMQTTIfDisconnected();         // Connect to MQTT if not connected do this at the beginning so it can run in the background
@@ -189,7 +192,9 @@ void loop()
         }
         else if (i % 10 == 0)
         {
-            Serial.println("MQTT not connected - no heartbeat sent");
+            Serial.print("MQTT connected: false, Wifi connected: ");
+            Serial.print(WiFi.status() == WL_CONNECTED ? "true" : "false");
+            Serial.println(" - no heartbeat sent");
         }
 
         // if an MQTT command was received, stop sleeping and process the command
@@ -212,31 +217,24 @@ void calculateAndSetVentilatorStatus()
 {
     SensorValues sensorValues = getSensorValues();
 
-    if (errorOnInitialize == true) // Check if valid values are coming from the sensors (only during first call)
+    if (sensorValues.sensorsOK == false)
     {
-        errorOnInitialize = sensorValues.sensorsOK == false;
-
-        if (sensorValues.sensorsOK == false)
+        if (mqttClient.connected())
         {
-            digitalWrite(RELAIPIN, RELAIS_OFF); // Turn off ventilator
-
-            if (mqttClient.connected())
-            {
-                mqttClient.publish(baseTopic + "log/status", "sensors show errors: " + sensorValues.errorReasoun, false, 1);
-                Serial.println(F("Error message sent"));
-                delay(500); // wait for message to be sent
-            }
-
-            Serial.println(F("Restarting in 5 seconds..."));
-            delay(5000);
-            ESP.restart();
+            mqttClient.publish(baseTopic + "log/status", "sensors show errors: " + sensorValues.errorReasoun, false, 1);
+            Serial.println(F("Error message sent"));
+            delay(500); // wait for message to be sent
         }
-        else
+
+        Serial.println(F("Restarting in 5 seconds..."));
+        delay(5000);
+        ESP.restart();
+    }
+    else
+    {
+        if (mqttClient.connected())
         {
-            if (mqttClient.connected())
-            {
-                mqttClient.publish(baseTopic + "log/status", "initialized", false, 1);
-            }
+            mqttClient.publish(baseTopic + "log/status", "sensors OK", false, 1);
         }
     }
 
@@ -657,7 +655,9 @@ void mqttCallback(String &topic, String &payload)
         {
             resetConfig();
         }
-    } else {
+    }
+    else
+    {
         Serial.println("Unknown topic: " + topic);
     }
 
