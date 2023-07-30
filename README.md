@@ -9,7 +9,7 @@ This was adpated to work on an ESP 8266 (I used the Huzzah feather) and to add s
 - MQTT to 
   - post the sensor data and ventilation status
   - be able to change settings remotely
-- possibility to save config values across reboots
+- config values are persisted across reboots
 
 sources:
 
@@ -65,6 +65,10 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 - `BASETOPIC/config/tempOutside_min/set`: minimum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_max/set`: maximum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/reset`: set this to `1` or `true` to reset the config values to the default config (aka what was in `settings.h`)
+
+## notes
+
+- bad WiFi can cause strange things... some values were sent as NaN even though WiFi was connected (lots of packet drops though) and QoS was set to 1.
 
 ## learnings
 
