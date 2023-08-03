@@ -20,5 +20,6 @@
 #define TEMPINSIDE_MIN 10.0   // minimum indoor temperature at which ventilation is activated
 #define TEMPOUTSIDE_MIN -10.0 // minimum outdoor temperature at which ventilation is activated
 #define TEMPOUTSIDE_MAX 25.0  // maximum outdoor temperature at which ventilation is activated
+#define HUMIDITY_MAX_AIR_EXCHANGE 80 // maximum inside humidity at which ventilation is activated to exchange air
 
 #define TIME_SERVER "europe.pool.ntp.org" // NTP server
