@@ -306,17 +306,15 @@ void calculateAndSetVentilatorStatus()
     if (requestedMode == "ON")
     {
         ventilatorStatusReason = "requestedMode == ON";
-        setVentilatorOn(true);
+        ventilatorStatus = true;
     }
     else if (requestedMode == "OFF")
     {
         ventilatorStatusReason = "requestedMode == OFF";
-        setVentilatorOn(false);
+        ventilatorStatus = false;
     }
-    else // mode == auto or unknown
-    {
-        setVentilatorOn(ventilatorStatus);
-    }
+
+    setVentilatorOn(ventilatorStatus);
 
     // **** publish vlaues via MQTT ********
     if (mqttClient.connected())
@@ -392,6 +390,8 @@ SensorValues getSensorValues()
  */
 void setVentilatorOn(bool running)
 {
+    // only update state when it changes
+    bool currentlyInRunningState = digitalRead(RELAIPIN) == RELAIS_ON;
     if (running == true)
     {
         digitalWrite(RELAIPIN, RELAIS_ON); // Turn on relay
@@ -403,10 +403,10 @@ void setVentilatorOn(bool running)
         Serial.println(F("-> ventilation OFF"));
     }
 
-    if (mqttClient.connected())
+    if (currentlyInRunningState != running && mqttClient.connected())
     {
-        mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", false, 1);
-        mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", false, 1);
+        mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", true, 1);
+        mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", true, 1);
     }
 }
 
