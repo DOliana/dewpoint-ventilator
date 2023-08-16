@@ -312,13 +312,13 @@ void calculateAndSetVentilatorStatus()
     }
 
     // every x hours, turn on the ventilator if it has been off for x hours
-    if (sensorValues.humidityInside >= MIN_HUMIDITY_FOR_OVERRIDE && ventilatorStatus == false && lastTimeVentilatorStatusChange < millis() - MAX_HOURS_WITHOUT_VENTILATION * 60 * 60 * 1000)
+    if (sensorValues.humidityInside >= min_humidity_for_override && ventilatorStatus == false && lastTimeVentilatorStatusChange < millis() - max_hours_without_ventilation * 60 * 60 * 1000)
     {
         ventilationOverride = true;
-        ventilatorStatusReason = "ventilator off for " + String(MAX_HOURS_WITHOUT_VENTILATION) + " hours - turning on";
+        ventilatorStatusReason = "ventilator off for " + String(max_hours_without_ventilation) + " hours - turning on";
     }
     // reset override after specified time
-    if (ventilationOverride && lastTimeVentilatorStatusChange < millis() - VENTILATION_OVERRIDE_MINUTES * 60 * 60 * 1000)
+    if (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 60 * 1000)
     {
         ventilationOverride = false;
     }
@@ -691,7 +691,7 @@ void mqttCallback(String &topic, String &payload)
     else if (topic.equals(baseTopic + "config/overrideVentilationMinutes/set"))
     {
         ventilation_override_minutes = payload.toInt();
-        configChangedMap[VENTILATION_OVERRIDE_MINUTES] = true;
+        configChangedMap[CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES] = true;
         saveConfig();
         Serial.print("ventilation_override_minutes set to ");
         Serial.println(ventilation_override_minutes);
