@@ -38,6 +38,11 @@ long unsigned maxMilliSecondsWithoutWiFi = 300000;               // maximum time
 long unsigned lastTimeWiFiOK = ULONG_MAX;                        // used to keep track of the last time the WiFi was connected
 String startupTime;                                              // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;                                   // needs to be a global variable, so the state is saved across loops
+long unsigned lastTimeVentilatorStatusChange = ULONG_MAX;        // used to keep track of the last time the ventilator status changed
+const short MIN_HUMIDITY_FOR_OVERRIDE = 80;                      // if the humidity inside is above this value, the ventilator will be turned on regardless of the dew point difference
+const short MAX_HOURS_WITHOUT_VENTILATION = 6;                   // after this time, the ventilator will be turned on for at least VENTILATION_OVERRIDE_TIME minutes
+const short VENTILATION_OVERRIDE_MINUTES = 30;                   // amount of minutes to override the ventilation status
+bool ventilationOverride = false;                                // used to override the ventilation status
 String baseTopic = "dewppoint-ventilator";                       // used to store the MQTT base topic (can be an empty string if no base topic is desired)
 String requestedMode = "AUTO";                                   // default mode after reboot is AUTO
 int min_delta = MIN_Delta;                                       // minimum difference between the dew points inside and outside to turn on the ventilator
@@ -303,15 +308,27 @@ void calculateAndSetVentilatorStatus()
         ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX: " + String(sensorValues.tempOutside) + " > " + String(tempOutside_max);
     }
 
-    if (requestedMode == "ON")
+    // every x hours, turn on the ventilator if it has been off for x hours
+    if (sensorValues.humidityInside >= MIN_HUMIDITY_FOR_OVERRIDE && ventilatorStatus == false && lastTimeVentilatorStatusChange < millis() - MAX_HOURS_WITHOUT_VENTILATION * 60 * 60 * 1000)
     {
-        ventilatorStatusReason = "requestedMode == ON";
+        ventilationOverride = true;
+        ventilatorStatusReason = "ventilator off for " + String(MAX_HOURS_WITHOUT_VENTILATION) + " hours - turning on";
+    }
+    // reset override after specified time
+    if (ventilationOverride && lastTimeVentilatorStatusChange < millis() - VENTILATION_OVERRIDE_MINUTES * 60 * 60 * 1000)
+    {
+        ventilationOverride = false;
+    }
+
+    if (ventilationOverride)
+    {
+        ventilatorStatusReason = "ventilationOverride == true";
         ventilatorStatus = true;
     }
-    else if (requestedMode == "OFF")
+    else if (requestedMode != "AUTO")
     {
-        ventilatorStatusReason = "requestedMode == OFF";
-        ventilatorStatus = false;
+        ventilatorStatusReason = "requestedMode == " + requestedMode;
+        ventilatorStatus = !(requestedMode == "OFF");
     }
 
     setVentilatorOn(ventilatorStatus);
@@ -405,6 +422,9 @@ void setVentilatorOn(bool running)
 
     if (currentlyInRunningState != running && mqttClient.connected())
     {
+        // save time when ventilator status has changed
+        lastTimeVentilatorStatusChange = millis();
+
         mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", true, 1);
         mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", true, 1);
     }
