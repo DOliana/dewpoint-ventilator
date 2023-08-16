@@ -342,7 +342,7 @@ void calculateAndSetVentilatorStatus()
         mqttClient.publish(baseTopic + "sensor-outside/temperature", String(sensorValues.tempOutside, 2), false, 1);
         mqttClient.publish(baseTopic + "sensor-outside/humidity", String(sensorValues.humidityOutside, 2), false, 1);
         mqttClient.publish(baseTopic + "sensor-outside/dewpoint", String(dewPoint_outside, 2), false, 1);
-        mqttClient.publish(baseTopic + "ventilation/reason", ventilatorStatusReason, false, 1);
+        mqttClient.publish(baseTopic + "log/ventilatorStatusReason", ventilatorStatusReason, false, 1);
         Serial.println(F("published to MQTT"));
     }
 }

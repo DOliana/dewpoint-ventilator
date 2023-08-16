@@ -52,7 +52,7 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 - `BASETOPIC/config/tempOutside_max`: maximum outdoor temperature at which ventilation is activated
 - `BASETOPIC/log/startup`: startup time in UTC (requires internet to get current time from ntp server)
 - `BASETOPIC/log/heartbeat`: heartbeat timestamp in UTC - sent every 10 seconds
-- `BASETOPIC/ventilation/reason`: Reason as string for the current state of the ventilator.
+- `BASETOPIC/log/ventilatorStatusReason`: Reason as string for the current state of the ventilator.
 - `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
 - `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
 
