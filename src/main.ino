@@ -893,15 +893,25 @@ bool loadConfig()
         return false;
     }
 
-    requestedMode = doc["mode"].as<String>();
-    min_delta = doc["deltaDPmin"].as<float>();
-    hysteresis = doc["hysteresis"].as<float>();
-    tempInside_min = doc["tempInside_min"].as<float>();
-    tempOutside_min = doc["tempOutside_min"].as<float>();
-    tempOutside_max = doc["tempOutside_max"].as<float>();
-    min_humidity_for_override = doc["min_humidity_for_override"].as<int>();
-    max_hours_without_ventilation = doc["max_hours_without_ventilation"].as<int>();
-    ventilation_override_minutes = doc["ventilation_override_minutes"].as<int>();
+    if (doc.containsKey("mode"))
+        requestedMode = doc["mode"].as<String>();
+    if (doc.containsKey("deltaDPmin"))
+        min_delta = doc["deltaDPmin"].as<int>();
+    if (doc.containsKey("hysteresis"))
+        hysteresis = doc["hysteresis"].as<int>();
+    if (doc.containsKey("tempInside_min"))
+        tempInside_min = doc["tempInside_min"].as<int>();
+    if (doc.containsKey("tempOutside_min"))
+        tempOutside_min = doc["tempOutside_min"].as<int>();
+    if (doc.containsKey("tempOutside_max"))
+        tempOutside_max = doc["tempOutside_max"].as<int>();
+    if (doc.containsKey("min_humidity_for_override"))
+        min_humidity_for_override = doc["min_humidity_for_override"].as<int>();
+    if (doc.containsKey("max_hours_without_ventilation"))
+        max_hours_without_ventilation = doc["max_hours_without_ventilation"].as<int>();
+    if (doc.containsKey("ventilation_override_minutes"))
+        ventilation_override_minutes = doc["ventilation_override_minutes"].as<int>();
+
     configFile.close();
     Serial.println("Config loaded from file:");
     Serial.println("- mode: " + requestedMode);
