@@ -672,23 +672,16 @@ void mqttCallback(String &topic, String &payload)
  * @param value The new value of the configuration value.
  * @return True if the configuration value was published, false otherwise.
  */
-bool publishConfigValueIfChanged(short configMapIndex, String valueName, String value)
+void publishConfigValueIfChanged(short configMapIndex, String valueName, String value)
 {
-    bool result = true;
     if (configChangedMap[configMapIndex])
     {
         if (mqttClient.connected())
         {
             configChangedMap[configMapIndex] = !mqttClient.publish(baseTopic + "config/" + valueName, value, true, 1);
-            result = configChangedMap[configMapIndex];
-            Serial.println("config value published for " + valueName + ". result: " + (!result ? "true" : "false"));
-        }
-        else
-        {
-            result = false;
+            Serial.println("config value published for " + valueName + ". result: " + (!configChangedMap[configMapIndex] ? "true" : "false"));
         }
     }
-    return result;
 }
 
 /**
