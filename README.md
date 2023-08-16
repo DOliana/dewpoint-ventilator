@@ -50,6 +50,9 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 - `BASETOPIC/config/tempInside_min`: minimum inside temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_min`: minimum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_max`: maximum outdoor temperature at which ventilation is activated
+- `BASETOPIC/config/overrideMinHumidity`:  if the humidity inside is above this value, the ventilator will be turned on periodically to prevent mold
+- `BASETOPIC/config/overrideMaxHoursWithoutVentilation`: after this time, the ventilator will be turned on for at least `overrideVentilationMinutes` minutes
+- `BASETOPIC/config/overrideVentilationMinutes`: amount of minutes to override the ventilation status
 - `BASETOPIC/log/startup`: startup time in UTC (requires internet to get current time from ntp server)
 - `BASETOPIC/log/heartbeat`: heartbeat timestamp in UTC - sent every 10 seconds
 - `BASETOPIC/log/ventilatorStatusReason`: Reason as string for the current state of the ventilator.
@@ -58,11 +61,10 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 
 ### command (config) topics
 
+All config values can be changed by appending `set` to the topic. Below are examples or topics where only specific values are allowed
+
 - `BASETOPIC/config/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of `ON`, `OFF`, `AUTO`. This setting is not persisted across reboots and defaults to `AUTO`.
 - `BASETOPIC/config/deltaDPmin/set`: minimum difference between dewpoints before ventilator is turned on
-- `BASETOPIC/config/hysteresis/set`: distance between switch-on and switch-off point
-- `BASETOPIC/config/tempInside_min/set`: minimum inside temperature at which ventilation is activated
-- `BASETOPIC/config/tempOutside_min/set`: minimum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_max/set`: maximum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/reset`: set this to `1` or `true` to reset the config values to the default config (aka what was in `settings.h`)
 
