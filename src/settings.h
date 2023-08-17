@@ -15,11 +15,13 @@
 #define CORRECTION_HUMIDITY_OUTSIDE 0 // correction value for outdoor sensor humidity
 //*******************************************************************
 
-#define MIN_Delta 5.0         // minimum dew point difference at which the relay switches
-#define HYSTERESIS 1.0        // distance from switch-on and switch-off point
-#define TEMPINSIDE_MIN 10.0   // minimum indoor temperature at which ventilation is activated
-#define TEMPOUTSIDE_MIN -10.0 // minimum outdoor temperature at which ventilation is activated
-#define TEMPOUTSIDE_MAX 25.0  // maximum outdoor temperature at which ventilation is activated
-#define HUMIDITY_MAX_AIR_EXCHANGE 80 // maximum inside humidity at which ventilation is activated to exchange air
+#define MIN_Delta 5.0                    // minimum dew point difference at which the relay switches
+#define HYSTERESIS 1.0                   // distance from switch-on and switch-off point
+#define TEMPINSIDE_MIN 10.0              // minimum indoor temperature at which ventilation is activated
+#define TEMPOUTSIDE_MIN -10.0            // minimum outdoor temperature at which ventilation is activated
+#define TEMPOUTSIDE_MAX 25.0             // maximum outdoor temperature at which ventilation is activated
+#define MIN_HUMIDITY_FOR_OVERRIDE 80     // if the humidity inside is above this value, the ventilator will be turned on regardless of the dew point difference
+#define MAX_HOURS_WITHOUT_VENTILATION 12 // after this time, the ventilator will be turned on for at least VENTILATION_OVERRIDE_TIME minutes
+#define VENTILATION_OVERRIDE_MINUTES 30  // amount of minutes to override the ventilation status
 
 #define TIME_SERVER "europe.pool.ntp.org" // NTP server
