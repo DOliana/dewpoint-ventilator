@@ -429,13 +429,16 @@ void setVentilatorOn(bool running)
         Serial.println(F("-> ventilation OFF"));
     }
 
-    if (currentlyInRunningState != running && mqttClient.connected())
+    if (currentlyInRunningState != running)
     {
         // save time when ventilator status has changed
         lastTimeVentilatorStatusChange = millis();
 
-        mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", true, 1);
-        mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", true, 1);
+        if (mqttClient.connected())
+        {
+            mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", true, 1);
+            mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", true, 1);
+        }
     }
 }
 
