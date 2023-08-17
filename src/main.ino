@@ -315,13 +315,14 @@ void calculateAndSetVentilatorStatus()
     }
 
     // every x hours, turn on the ventilator if it has been off for x hours
-    if (sensorValues.humidityInside >= min_humidity_for_override && ventilatorStatus == false && lastTimeVentilatorStatusChange < millis() - max_hours_without_ventilation * 60 * 60 * 1000)
+    bool actualVentilatorStatus = digitalRead(RELAIPIN) == RELAIS_ON;
+    if (sensorValues.humidityInside >= min_humidity_for_override && actualVentilatorStatus == false && lastTimeVentilatorStatusChange < millis() - max_hours_without_ventilation * 60 * 60 * 1000)
     {
         ventilationOverride = true;
         ventilatorStatusReason = "ventilator off for " + String(max_hours_without_ventilation) + " hours - turning on";
     }
     // reset override after specified time or when we would ventilate anyway
-    if (ventilatorStatus || (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 60 * 1000))
+    else if (ventilatorStatus || (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 1000))
     {
         Serial.println("-> Resetting ventilation override");
         ventilationOverride = false;
@@ -846,7 +847,7 @@ String getTimeString()
  */
 bool saveConfig()
 {
-    StaticJsonDocument<200> doc;
+    StaticJsonDocument<400> doc;
     doc["mode"] = requestedMode;
     doc["deltaDPmin"] = min_delta;
     doc["hysteresis"] = hysteresis;
@@ -888,7 +889,7 @@ bool loadConfig()
         return false;
     }
 
-    StaticJsonDocument<200> doc;
+    StaticJsonDocument<400> doc;
     DeserializationError error = deserializeJson(doc, configFile);
 
     if (error)
