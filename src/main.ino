@@ -10,6 +10,7 @@
 #include "FS.h"          // for file system (config)
 #include <LittleFS.h>    // for file system (config)
 #include <iterator>      // for map
+#include <ArduinoOTA.h>  // for OTA updates
 
 #define RELAIS_ON HIGH // define the relais on value
 #define RELAIS_OFF LOW // define the relais off value
@@ -62,6 +63,7 @@ bool configChangedMap[9] = {true, true, true, true, true, true, true, true, true
 #define CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION 7                                 // index of the configuration value in the configuration map
 #define CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES 8                                  // index of the configuration value in the configuration map
 WiFiEventHandler wifiConnectHandler;
+bool otaInitialized = false;
 
 WiFiClient wifiClient;
 MQTTClient mqttClient;
@@ -171,6 +173,12 @@ void loop()
     if (WiFi.status() == WL_CONNECTED)
     {
         lastTimeWiFiOK = millis();
+        if (otaInitialized == false)
+        {
+            InitializeOTA();
+        }
+
+        ArduinoOTA.handle();
     }
     else if (millis() - lastTimeWiFiOK > maxMilliSecondsWithoutWiFi)
     {
@@ -533,6 +541,44 @@ void onWiFiConnect(const WiFiEventStationModeGotIP &event)
 {
     Serial.println("Connected to Wi-Fi sucessfully.");
     stopSleeping = true; // stop sleeping if WiFi is connected to process MQTT commands immediately.
+}
+
+void InitializeOTA()
+{
+    ArduinoOTA.setHostname(wifi_hostname);
+    ArduinoOTA.setPassword(SECRET_OTA_PASSWORD);
+    ArduinoOTA.onStart([]()
+                       { Serial.println("Start"); 
+                       if(mqttClient.connected())
+                       {
+                           mqttClient.publish(baseTopic + "log/ota", "Start", true, 1);
+                       } });
+    ArduinoOTA.onEnd([]()
+                     { Serial.println("\nEnd");
+                     if(mqttClient.connected())
+                     {
+                         mqttClient.publish(baseTopic + "log/ota", "End", true, 1);
+                     } });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+                          { Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+                          if(mqttClient.connected())
+                          {
+                              mqttClient.publish(baseTopic + "log/ota", "Progress: " + String(progress / (total / 100)) + "%", true, 1);
+                          } });
+    ArduinoOTA.onError([](ota_error_t error)
+                       {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed"); 
+    if(mqttClient.connected())
+                          {
+                              mqttClient.publish(baseTopic + "log/ota", "Error", true, 1);
+                          } });
+    ArduinoOTA.begin();
+    otaInitialized = true;
 }
 
 /**
