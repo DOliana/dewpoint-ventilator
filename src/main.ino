@@ -34,25 +34,33 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-long unsigned maxMilliSecondsWithoutWiFi = 300000;               // maximum time without wifi after which we perform a full reboot
-long unsigned lastTimeWiFiOK = ULONG_MAX;                        // used to keep track of the last time the WiFi was connected
-String startupTime;                                              // startup time - if set its been sent. Used to prevent sending the startup message multiple times
-bool ventilatorStatus = false;                                   // needs to be a global variable, so the state is saved across loops
-String baseTopic = "dewppoint-ventilator";                       // used to store the MQTT base topic (can be an empty string if no base topic is desired)
-String requestedMode = "AUTO";                                   // default mode after reboot is AUTO
-int min_delta = MIN_Delta;                                       // minimum difference between the dew points inside and outside to turn on the ventilator
-int hysteresis = HYSTERESIS;                                     // hysteresis for turning off the ventilator
-int tempInside_min = TEMPINSIDE_MIN;                             // minimum temperature inside to turn on the ventilator
-int tempOutside_min = TEMPOUTSIDE_MIN;                           // minimum temperature outside to turn on the ventilator
-int tempOutside_max = TEMPOUTSIDE_MAX;                           // maximum temperature outside to turn on the ventilator
-bool stopSleeping = false;                                       // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
-bool configChangedMap[6] = {true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
-#define CONFIG_IDX_MODE 0
-#define CONFIG_IDX_MIN_DELTA 1
-#define CONFIG_IDX_HYSTERESIS 2
-#define CONFIG_IDX_TEMPINSIDE_MIN 3
-#define CONFIG_IDX_TEMPOUTSIDE_MIN 4
-#define CONFIG_IDX_TEMPOUTSIDE_MAX 5
+long unsigned maxMilliSecondsWithoutWiFi = 300000;                                 // maximum time without wifi after which we perform a full reboot
+long unsigned lastTimeWiFiOK = ULONG_MAX;                                          // used to keep track of the last time the WiFi was connected
+String startupTime;                                                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
+bool ventilatorStatus = false;                                                     // needs to be a global variable, so the state is saved across loops
+long unsigned lastTimeVentilatorStatusChange;                                      // used to keep track of the last time the ventilator status changed
+int min_humidity_for_override = MIN_HUMIDITY_FOR_OVERRIDE;                         // if the humidity inside is above this value, the ventilator will be turned on regardless of the dew point difference
+int max_hours_without_ventilation = MAX_HOURS_WITHOUT_VENTILATION;                 // after this time, the ventilator will be turned on for at least VENTILATION_OVERRIDE_TIME minutes
+int ventilation_override_minutes = VENTILATION_OVERRIDE_MINUTES;                   // amount of minutes to override the ventilation status
+bool ventilationOverride = false;                                                  // used to override the ventilation status
+String baseTopic = "dewppoint-ventilator";                                         // used to store the MQTT base topic (can be an empty string if no base topic is desired)
+String requestedMode = "AUTO";                                                     // default mode after reboot is AUTO
+int min_delta = MIN_Delta;                                                         // minimum difference between the dew points inside and outside to turn on the ventilator
+int hysteresis = HYSTERESIS;                                                       // hysteresis for turning off the ventilator
+int tempInside_min = TEMPINSIDE_MIN;                                               // minimum temperature inside to turn on the ventilator
+int tempOutside_min = TEMPOUTSIDE_MIN;                                             // minimum temperature outside to turn on the ventilator
+int tempOutside_max = TEMPOUTSIDE_MAX;                                             // maximum temperature outside to turn on the ventilator
+bool stopSleeping = false;                                                         // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
+bool configChangedMap[9] = {true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
+#define CONFIG_IDX_MODE 0                                                          // index of the configuration value in the configuration map
+#define CONFIG_IDX_MIN_DELTA 1                                                     // index of the configuration value in the configuration map
+#define CONFIG_IDX_HYSTERESIS 2                                                    // index of the configuration value in the configuration map
+#define CONFIG_IDX_TEMPINSIDE_MIN 3                                                // index of the configuration value in the configuration map
+#define CONFIG_IDX_TEMPOUTSIDE_MIN 4                                               // index of the configuration value in the configuration map
+#define CONFIG_IDX_TEMPOUTSIDE_MAX 5                                               // index of the configuration value in the configuration map
+#define CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE 6                                     // index of the configuration value in the configuration map
+#define CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION 7                                 // index of the configuration value in the configuration map
+#define CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES 8                                  // index of the configuration value in the configuration map
 WiFiEventHandler wifiConnectHandler;
 
 WiFiClient wifiClient;
@@ -137,6 +145,9 @@ void setup()
         Serial.println("Failed to load config from file - saving default values in config");
         resetConfig();
     }
+
+    // set last status change to now - max hours without ventilation so the ventilator will be turned on immediately if required
+    lastTimeVentilatorStatusChange = millis() - max_hours_without_ventilation * 60 * 60 * 1000;
 
     Serial.println("Setup complete");
     Serial.println();
@@ -303,20 +314,32 @@ void calculateAndSetVentilatorStatus()
         ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX: " + String(sensorValues.tempOutside) + " > " + String(tempOutside_max);
     }
 
-    if (requestedMode == "ON")
+    // every x hours, turn on the ventilator if it has been off for x hours
+    if (sensorValues.humidityInside >= min_humidity_for_override && ventilatorStatus == false && lastTimeVentilatorStatusChange < millis() - max_hours_without_ventilation * 60 * 60 * 1000)
     {
-        ventilatorStatusReason = "requestedMode == ON";
-        setVentilatorOn(true);
+        ventilationOverride = true;
+        ventilatorStatusReason = "ventilator off for " + String(max_hours_without_ventilation) + " hours - turning on";
     }
-    else if (requestedMode == "OFF")
+    // reset override after specified time or when we would ventilate anyway
+    if (ventilatorStatus || (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 60 * 1000))
     {
-        ventilatorStatusReason = "requestedMode == OFF";
-        setVentilatorOn(false);
+        Serial.println("-> Resetting ventilation override");
+        ventilationOverride = false;
     }
-    else // mode == auto or unknown
+
+    if (ventilationOverride)
     {
-        setVentilatorOn(ventilatorStatus);
+        ventilatorStatusReason = "ventilationOverride == true";
+        ventilatorStatus = true;
     }
+    else if (requestedMode != "AUTO")
+    {
+        ventilatorStatusReason = "requestedMode == " + requestedMode;
+        ventilatorStatus = !(requestedMode == "OFF");
+    }
+
+    setVentilatorOn(ventilatorStatus);
+    Serial.println("-> Reason: " + ventilatorStatusReason);
 
     // **** publish vlaues via MQTT ********
     if (mqttClient.connected())
@@ -327,7 +350,7 @@ void calculateAndSetVentilatorStatus()
         mqttClient.publish(baseTopic + "sensor-outside/temperature", String(sensorValues.tempOutside, 2), false, 1);
         mqttClient.publish(baseTopic + "sensor-outside/humidity", String(sensorValues.humidityOutside, 2), false, 1);
         mqttClient.publish(baseTopic + "sensor-outside/dewpoint", String(dewPoint_outside, 2), false, 1);
-        mqttClient.publish(baseTopic + "ventilation/reason", ventilatorStatusReason, false, 1);
+        mqttClient.publish(baseTopic + "log/ventilatorStatusReason", ventilatorStatusReason, false, 1);
         Serial.println(F("published to MQTT"));
     }
 }
@@ -392,6 +415,8 @@ SensorValues getSensorValues()
  */
 void setVentilatorOn(bool running)
 {
+    // only update state when it changes
+    bool currentlyInRunningState = digitalRead(RELAIPIN) == RELAIS_ON;
     if (running == true)
     {
         digitalWrite(RELAIPIN, RELAIS_ON); // Turn on relay
@@ -403,10 +428,13 @@ void setVentilatorOn(bool running)
         Serial.println(F("-> ventilation OFF"));
     }
 
-    if (mqttClient.connected())
+    if (currentlyInRunningState != running && mqttClient.connected())
     {
-        mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", false, 1);
-        mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", false, 1);
+        // save time when ventilator status has changed
+        lastTimeVentilatorStatusChange = millis();
+
+        mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", true, 1);
+        mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", true, 1);
     }
 }
 
@@ -649,6 +677,30 @@ void mqttCallback(String &topic, String &payload)
         Serial.print("tempOutside_max set to ");
         Serial.println(tempOutside_max);
     }
+    else if (topic.equals(baseTopic + "config/overrideMinHumidity/set"))
+    {
+        min_humidity_for_override = payload.toInt();
+        configChangedMap[CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE] = true;
+        saveConfig();
+        Serial.print("min_humidity_for_override set to ");
+        Serial.println(min_humidity_for_override);
+    }
+    else if (topic.equals(baseTopic + "config/overrideMaxHoursWithoutVentilation/set"))
+    {
+        max_hours_without_ventilation = payload.toInt();
+        configChangedMap[CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION] = true;
+        saveConfig();
+        Serial.print("max_hours_without_ventilation set to ");
+        Serial.println(max_hours_without_ventilation);
+    }
+    else if (topic.equals(baseTopic + "config/overrideVentilationMinutes/set"))
+    {
+        ventilation_override_minutes = payload.toInt();
+        configChangedMap[CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES] = true;
+        saveConfig();
+        Serial.print("ventilation_override_minutes set to ");
+        Serial.println(ventilation_override_minutes);
+    }
     else if (topic.equals(baseTopic + "config/reset"))
     {
         if (payload == "true" or payload == "1")
@@ -672,23 +724,16 @@ void mqttCallback(String &topic, String &payload)
  * @param value The new value of the configuration value.
  * @return True if the configuration value was published, false otherwise.
  */
-bool publishConfigValueIfChanged(short configMapIndex, String valueName, String value)
+void publishConfigValueIfChanged(short configMapIndex, String valueName, String value)
 {
-    bool result = true;
     if (configChangedMap[configMapIndex])
     {
         if (mqttClient.connected())
         {
             configChangedMap[configMapIndex] = !mqttClient.publish(baseTopic + "config/" + valueName, value, true, 1);
-            result = configChangedMap[configMapIndex];
-            Serial.println("config value published for " + valueName + ". result: " + (!result ? "true" : "false"));
-        }
-        else
-        {
-            result = false;
+            Serial.println("config value published for " + valueName + ". result: " + (!configChangedMap[configMapIndex] ? "true" : "false"));
         }
     }
-    return result;
 }
 
 /**
@@ -706,6 +751,9 @@ void publishConfigIfChanded()
     publishConfigValueIfChanged(CONFIG_IDX_TEMPINSIDE_MIN, "tempInside_min", String(tempInside_min));
     publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MIN, "tempOutside_min", String(tempOutside_min));
     publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MAX, "tempOutside_max", String(tempOutside_max));
+    publishConfigValueIfChanged(CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE, "overrideMinHumidity", String(min_humidity_for_override));
+    publishConfigValueIfChanged(CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION, "overrideMaxHoursWithoutVentilation", String(max_hours_without_ventilation));
+    publishConfigValueIfChanged(CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES, "overrideVentilationMinutes", String(ventilation_override_minutes));
 }
 
 /**
@@ -805,6 +853,9 @@ bool saveConfig()
     doc["tempInside_min"] = tempInside_min;
     doc["tempOutside_min"] = tempOutside_min;
     doc["tempOutside_max"] = tempOutside_max;
+    doc["min_humidity_for_override"] = min_humidity_for_override;
+    doc["max_hours_without_ventilation"] = max_hours_without_ventilation;
+    doc["ventilation_override_minutes"] = ventilation_override_minutes;
 
     // Open file for writing
     File configFile = LittleFS.open("/config.json", "w");
@@ -847,12 +898,25 @@ bool loadConfig()
         return false;
     }
 
-    requestedMode = doc["mode"].as<String>();
-    min_delta = doc["deltaDPmin"].as<float>();
-    hysteresis = doc["hysteresis"].as<float>();
-    tempInside_min = doc["tempInside_min"].as<float>();
-    tempOutside_min = doc["tempOutside_min"].as<float>();
-    tempOutside_max = doc["tempOutside_max"].as<float>();
+    if (doc.containsKey("mode"))
+        requestedMode = doc["mode"].as<String>();
+    if (doc.containsKey("deltaDPmin"))
+        min_delta = doc["deltaDPmin"].as<int>();
+    if (doc.containsKey("hysteresis"))
+        hysteresis = doc["hysteresis"].as<int>();
+    if (doc.containsKey("tempInside_min"))
+        tempInside_min = doc["tempInside_min"].as<int>();
+    if (doc.containsKey("tempOutside_min"))
+        tempOutside_min = doc["tempOutside_min"].as<int>();
+    if (doc.containsKey("tempOutside_max"))
+        tempOutside_max = doc["tempOutside_max"].as<int>();
+    if (doc.containsKey("min_humidity_for_override"))
+        min_humidity_for_override = doc["min_humidity_for_override"].as<int>();
+    if (doc.containsKey("max_hours_without_ventilation"))
+        max_hours_without_ventilation = doc["max_hours_without_ventilation"].as<int>();
+    if (doc.containsKey("ventilation_override_minutes"))
+        ventilation_override_minutes = doc["ventilation_override_minutes"].as<int>();
+
     configFile.close();
     Serial.println("Config loaded from file:");
     Serial.println("- mode: " + requestedMode);
@@ -861,6 +925,9 @@ bool loadConfig()
     Serial.println("- tempInside_min: " + String(tempInside_min));
     Serial.println("- tempOutside_min: " + String(tempOutside_min));
     Serial.println("- tempOutside_max: " + String(tempOutside_max));
+    Serial.println("- min_humidity_for_override: " + String(min_humidity_for_override));
+    Serial.println("- max_hours_without_ventilation: " + String(max_hours_without_ventilation));
+    Serial.println("- ventilation_override_minutes: " + String(ventilation_override_minutes));
 
     return true;
 }
@@ -878,6 +945,9 @@ void resetConfig()
     tempInside_min = TEMPINSIDE_MIN;
     tempOutside_min = TEMPOUTSIDE_MIN;
     tempOutside_max = TEMPOUTSIDE_MAX;
+    min_humidity_for_override = MIN_HUMIDITY_FOR_OVERRIDE;
+    max_hours_without_ventilation = MAX_HOURS_WITHOUT_VENTILATION;
+    ventilation_override_minutes = VENTILATION_OVERRIDE_MINUTES;
     Serial.println("Config reset to default values");
     // mark all config values as changed
     for (size_t i = 0; i < sizeof(configChangedMap); i++)
