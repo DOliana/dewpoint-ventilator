@@ -38,7 +38,7 @@ long unsigned maxMilliSecondsWithoutWiFi = 300000;                              
 long unsigned lastTimeWiFiOK = ULONG_MAX;                                          // used to keep track of the last time the WiFi was connected
 String startupTime;                                                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;                                                     // needs to be a global variable, so the state is saved across loops
-long unsigned lastTimeVentilatorStatusChange = ULONG_MAX;                          // used to keep track of the last time the ventilator status changed
+long unsigned lastTimeVentilatorStatusChange;                                      // used to keep track of the last time the ventilator status changed
 int min_humidity_for_override = MIN_HUMIDITY_FOR_OVERRIDE;                         // if the humidity inside is above this value, the ventilator will be turned on regardless of the dew point difference
 int max_hours_without_ventilation = MAX_HOURS_WITHOUT_VENTILATION;                 // after this time, the ventilator will be turned on for at least VENTILATION_OVERRIDE_TIME minutes
 int ventilation_override_minutes = VENTILATION_OVERRIDE_MINUTES;                   // amount of minutes to override the ventilation status
@@ -145,6 +145,9 @@ void setup()
         Serial.println("Failed to load config from file - saving default values in config");
         resetConfig();
     }
+
+    // set last status change to now - max hours without ventilation so the ventilator will be turned on immediately if required
+    lastTimeVentilatorStatusChange = millis() - max_hours_without_ventilation * 60 * 60 * 1000;
 
     Serial.println("Setup complete");
     Serial.println();
@@ -335,6 +338,7 @@ void calculateAndSetVentilatorStatus()
     }
 
     setVentilatorOn(ventilatorStatus);
+    Serial.println("-> Reason: " + ventilatorStatusReason);
 
     // **** publish vlaues via MQTT ********
     if (mqttClient.connected())
