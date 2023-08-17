@@ -320,9 +320,10 @@ void calculateAndSetVentilatorStatus()
         ventilationOverride = true;
         ventilatorStatusReason = "ventilator off for " + String(max_hours_without_ventilation) + " hours - turning on";
     }
-    // reset override after specified time
-    if (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 60 * 1000)
+    // reset override after specified time or when we would ventilate anyway
+    if (ventilatorStatus || (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 60 * 1000))
     {
+        Serial.println("-> Resetting ventilation override");
         ventilationOverride = false;
     }
 

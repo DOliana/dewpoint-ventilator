@@ -1,4 +1,4 @@
-# 1 "C:\\Users\\OLIANA~1\\AppData\\Local\\Temp\\tmpi3gthnbp"
+# 1 "C:\\Users\\OLIANA~1\\AppData\\Local\\Temp\\tmpno3t5tz4"
 #include <Arduino.h>
 # 1 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 #include <Arduino.h>
@@ -318,8 +318,9 @@ void calculateAndSetVentilatorStatus()
         ventilatorStatusReason = "ventilator off for " + String(max_hours_without_ventilation) + " hours - turning on";
     }
 
-    if (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 60 * 1000)
+    if (ventilatorStatus || (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 60 * 1000))
     {
+        Serial.println("-> Resetting ventilation override");
         ventilationOverride = false;
     }
 
@@ -401,7 +402,7 @@ SensorValues getSensorValues()
 
     return result;
 }
-# 415 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
+# 416 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 void setVentilatorOn(bool running)
 {
 
@@ -426,7 +427,7 @@ void setVentilatorOn(bool running)
         mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", true, 1);
     }
 }
-# 448 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
+# 449 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 float calculateDewpoint(float t, float r)
 {
     float a = 0, b = 0;
@@ -493,7 +494,7 @@ void initializeWiFi()
     Serial.println("WiFi not configured");
 #endif
 }
-# 523 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
+# 524 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 void onWiFiConnect(const WiFiEventStationModeGotIP &event)
 {
     Serial.println("Connected to Wi-Fi sucessfully.");
@@ -566,7 +567,7 @@ void connectMQTTIfDisconnected()
         }
     }
 }
-# 607 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
+# 608 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 void mqttCallback(String &topic, String &payload)
 {
     Serial.print("Message arrived [");
@@ -677,7 +678,7 @@ void mqttCallback(String &topic, String &payload)
 
     stopSleeping = true;
 }
-# 726 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
+# 727 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 void publishConfigValueIfChanged(short configMapIndex, String valueName, String value)
 {
     if (configChangedMap[configMapIndex])
@@ -745,7 +746,7 @@ bool connectNTPClient()
         return false;
     }
 }
-# 804 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
+# 805 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 void sleepAndBlink(int sleepTimeMS)
 {
     while (sleepTimeMS > 0)
@@ -815,7 +816,7 @@ bool saveConfig()
     Serial.println("Config saved to file");
     return true;
 }
-# 881 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
+# 882 "C:/Dev/Privat/dewpoint-vent/src/main.ino"
 bool loadConfig()
 {
     File configFile = LittleFS.open("/config.json", "r");
