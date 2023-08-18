@@ -34,7 +34,7 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-long unsigned maxMilliSecondsWithoutWiFi = 300000;                                 // maximum time without wifi after which we perform a full reboot
+long unsigned maxMilliSecondsWithoutWiFi = 300000UL;                               // maximum time without wifi after which we perform a full reboot
 long unsigned lastTimeWiFiOK = ULONG_MAX;                                          // used to keep track of the last time the WiFi was connected
 String startupTime;                                                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;                                                     // needs to be a global variable, so the state is saved across loops
@@ -227,6 +227,7 @@ void loop()
 void calculateAndSetVentilatorStatus()
 {
     SensorValues sensorValues = getSensorValues();
+    bool newVentilatorStatus = ventilatorStatus;
 
     if (sensorValues.sensorsOK == false)
     {
@@ -288,58 +289,61 @@ void calculateAndSetVentilatorStatus()
     String ventilatorStatusReason = "Hysteresis phase";
     if (deltaDP > (min_delta + hysteresis))
     {
-        ventilatorStatus = true;
+        newVentilatorStatus = true;
         ventilatorStatusReason = "DeltaDP > (MIN_Delta + HYSTERESIS): " + String(deltaDP) + " > " + String(min_delta) + " + " + String(hysteresis);
     }
     else if (deltaDP <= (min_delta))
     {
-        ventilatorStatus = false;
+        newVentilatorStatus = false;
         ventilatorStatusReason = "DeltaDP < (MIN_Delta): " + String(deltaDP) + " < " + String(min_delta);
     }
 
     // check overrides
-    if (ventilatorStatus && sensorValues.tempInside < tempInside_min)
+    if (newVentilatorStatus && sensorValues.tempInside < tempInside_min)
     {
-        ventilatorStatus = false;
+        newVentilatorStatus = false;
         ventilatorStatusReason = "tempInside < TEMPINSIDE_MIN: " + String(sensorValues.tempInside) + " < " + String(tempInside_min);
     }
-    else if (ventilatorStatus && sensorValues.tempOutside < tempOutside_min)
+    else if (newVentilatorStatus && sensorValues.tempOutside < tempOutside_min)
     {
-        ventilatorStatus = false;
+        newVentilatorStatus = false;
         ventilatorStatusReason = "tempOutside < TEMPOUTSIDE_MIN: " + String(sensorValues.tempOutside) + " < " + String(tempOutside_min);
     }
-    else if (ventilatorStatus && sensorValues.tempOutside > tempOutside_max)
+    else if (newVentilatorStatus && sensorValues.tempOutside > tempOutside_max)
     {
-        ventilatorStatus = false;
+        newVentilatorStatus = false;
         ventilatorStatusReason = "tempOutside > TEMPOUTSIDE_MAX: " + String(sensorValues.tempOutside) + " > " + String(tempOutside_max);
     }
 
-    // every x hours, turn on the ventilator if it has been off for x hours
-    bool actualVentilatorStatus = digitalRead(RELAIPIN) == RELAIS_ON;
-    if (sensorValues.humidityInside >= min_humidity_for_override && actualVentilatorStatus == false && lastTimeVentilatorStatusChange < millis() - max_hours_without_ventilation * 60 * 60 * 1000)
+    // check can only run after first x hours passed since millis starts at 0
+    if (millis() > (unsigned long)(max_hours_without_ventilation)*60UL * 60UL * 1000UL)
     {
-        ventilationOverride = true;
-        ventilatorStatusReason = "ventilator off for " + String(max_hours_without_ventilation) + " hours - turning on";
-    }
-    // reset override after specified time or when we would ventilate anyway
-    else if (ventilatorStatus || (ventilationOverride && lastTimeVentilatorStatusChange < millis() - ventilation_override_minutes * 60 * 1000))
-    {
-        Serial.println("-> Resetting ventilation override");
-        ventilationOverride = false;
+        // every x hours, turn on the ventilator if it has been off for x hours
+        if (sensorValues.humidityInside >= min_humidity_for_override && ventilatorStatus == false && lastTimeVentilatorStatusChange < (millis() - (unsigned long)(max_hours_without_ventilation)*60UL * 60UL * 1000UL))
+        {
+            ventilationOverride = true;
+            ventilatorStatusReason = "ventilator off for " + String(max_hours_without_ventilation) + " hours - turning on";
+        }
+        // reset override after specified time or when we would ventilate anyway
+        else if (ventilationOverride && lastTimeVentilatorStatusChange < (millis() - (unsigned long)(ventilation_override_minutes)*60UL * 1000UL))
+        {
+            Serial.println("-> Resetting ventilation override");
+            ventilationOverride = false;
+        }
     }
 
     if (ventilationOverride)
     {
         ventilatorStatusReason = "ventilationOverride == true";
-        ventilatorStatus = true;
+        newVentilatorStatus = true;
     }
     else if (requestedMode != "AUTO")
     {
         ventilatorStatusReason = "requestedMode == " + requestedMode;
-        ventilatorStatus = !(requestedMode == "OFF");
+        newVentilatorStatus = (requestedMode == "ON");
     }
 
-    setVentilatorOn(ventilatorStatus);
+    setVentilatorOn(newVentilatorStatus);
     Serial.println("-> Reason: " + ventilatorStatusReason);
 
     // **** publish vlaues via MQTT ********
@@ -416,8 +420,6 @@ SensorValues getSensorValues()
  */
 void setVentilatorOn(bool running)
 {
-    // only update state when it changes
-    bool currentlyInRunningState = digitalRead(RELAIPIN) == RELAIS_ON;
     if (running == true)
     {
         digitalWrite(RELAIPIN, RELAIS_ON); // Turn on relay
@@ -429,10 +431,12 @@ void setVentilatorOn(bool running)
         Serial.println(F("-> ventilation OFF"));
     }
 
-    if (currentlyInRunningState != running)
+    // only send MQTT message if the status has changed
+    if (ventilatorStatus != running)
     {
         // save time when ventilator status has changed
         lastTimeVentilatorStatusChange = millis();
+        ventilatorStatus = running;
 
         if (mqttClient.connected())
         {
