@@ -544,6 +544,7 @@ void InitializeOTA()
 {
     ArduinoOTA.setHostname(wifi_hostname);
     ArduinoOTA.setPassword(SECRET_OTA_PASSWORD);
+    ArduinoOTA.setPort(8266);
     ArduinoOTA.onStart([]()
                        { Serial.println("Start"); 
                        if(mqttClient.connected())
@@ -572,9 +573,10 @@ void InitializeOTA()
     else if (error == OTA_END_ERROR) Serial.println("End Failed"); 
     if(mqttClient.connected())
                           {
-                              mqttClient.publish(baseTopic + "log/ota", "Error", true, 1);
+                              mqttClient.publish(baseTopic + "log/ota", "Error: " + error, true, 1);
                           } });
     ArduinoOTA.begin();
+    Serial.println("OTA Initialized");
     otaInitialized = true;
 }
 
@@ -622,6 +624,9 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe(baseTopic + "config/tempInside_min/set", 1);
                 mqttClient.subscribe(baseTopic + "config/tempOutside_min/set", 1);
                 mqttClient.subscribe(baseTopic + "config/tempOutside_max/set", 1);
+                mqttClient.subscribe(baseTopic + "config/overrideMinHumidity/set", 1);
+                mqttClient.subscribe(baseTopic + "config/overrideMaxHoursWithoutVentilation/set", 1);
+                mqttClient.subscribe(baseTopic + "config/overrideVentilationMinutes/set", 1);
                 mqttClient.subscribe(baseTopic + "config/reset", 1);
                 Serial.println("command topics subscribed");
 
