@@ -576,9 +576,9 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe(baseTopic + "config/tempInside_min/set", 1);
                 mqttClient.subscribe(baseTopic + "config/tempOutside_min/set", 1);
                 mqttClient.subscribe(baseTopic + "config/tempOutside_max/set", 1);
-                mqttClient.subscribe(baseTopic + "config/overrideMinHumidity/set", 1);
-                mqttClient.subscribe(baseTopic + "config/overrideMaxHoursWithoutVentilation/set", 1);
-                mqttClient.subscribe(baseTopic + "config/overrideVentilationMinutes/set", 1);
+                mqttClient.subscribe(baseTopic + "config/minHumidityForcedVentilation/set", 1);
+                mqttClient.subscribe(baseTopic + "config/maxHoursWithoutVentForcedVentilation/set", 1);
+                mqttClient.subscribe(baseTopic + "config/forcedVentilationMinutes/set", 1);
                 mqttClient.subscribe(baseTopic + "config/reset", 1);
                 Serial.println("command topics subscribed");
 
@@ -685,7 +685,7 @@ void mqttCallback(String &topic, String &payload)
         Serial.print("tempOutside_max set to ");
         Serial.println(tempOutside_max);
     }
-    else if (topic.equals(baseTopic + "config/overrideMinHumidity/set"))
+    else if (topic.equals(baseTopic + "config/minHumidityForcedVentilation/set"))
     {
         min_humidity_for_override = payload.toInt();
         configChangedMap[CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE] = true;
@@ -693,7 +693,7 @@ void mqttCallback(String &topic, String &payload)
         Serial.print("min_humidity_for_override set to ");
         Serial.println(min_humidity_for_override);
     }
-    else if (topic.equals(baseTopic + "config/overrideMaxHoursWithoutVentilation/set"))
+    else if (topic.equals(baseTopic + "config/maxHoursWithoutVentForcedVentilation/set"))
     {
         max_hours_without_ventilation = payload.toInt();
         configChangedMap[CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION] = true;
@@ -701,7 +701,7 @@ void mqttCallback(String &topic, String &payload)
         Serial.print("max_hours_without_ventilation set to ");
         Serial.println(max_hours_without_ventilation);
     }
-    else if (topic.equals(baseTopic + "config/overrideVentilationMinutes/set"))
+    else if (topic.equals(baseTopic + "config/forcedVentilationMinutes/set"))
     {
         ventilation_override_minutes = payload.toInt();
         configChangedMap[CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES] = true;
@@ -759,9 +759,9 @@ void publishConfigIfChanded()
     publishConfigValueIfChanged(CONFIG_IDX_TEMPINSIDE_MIN, "tempInside_min", String(tempInside_min));
     publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MIN, "tempOutside_min", String(tempOutside_min));
     publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MAX, "tempOutside_max", String(tempOutside_max));
-    publishConfigValueIfChanged(CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE, "overrideMinHumidity", String(min_humidity_for_override));
-    publishConfigValueIfChanged(CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION, "overrideMaxHoursWithoutVentilation", String(max_hours_without_ventilation));
-    publishConfigValueIfChanged(CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES, "overrideVentilationMinutes", String(ventilation_override_minutes));
+    publishConfigValueIfChanged(CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE, "minHumidityForcedVentilation", String(min_humidity_for_override));
+    publishConfigValueIfChanged(CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION, "maxHoursWithoutVentForcedVentilation", String(max_hours_without_ventilation));
+    publishConfigValueIfChanged(CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES, "forcedVentilationMinutes", String(ventilation_override_minutes));
 }
 
 /**
