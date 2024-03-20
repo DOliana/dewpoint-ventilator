@@ -1,5 +1,6 @@
 #include <Arduino.h>     // for Arduino functions
 #include "DHT.h"         // for DHT sensors
+#include "SHT85.h"       // for SHT30 sensor
 #include <ESP8266WiFi.h> // for WiFi
 #include <MQTT.h>        // for MQTT
 #include <NTPClient.h>   // for time sync
@@ -34,37 +35,40 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-long unsigned maxMilliSecondsWithoutWiFi = 300000UL;                                                        // maximum time without wifi after which we perform a full reboot
-long unsigned lastTimeWiFiOK = ULONG_MAX;                                                                   // used to keep track of the last time the WiFi was connected
-String startupTime;                                                                                         // startup time - if set its been sent. Used to prevent sending the startup message multiple times
-bool ventilatorStatus = false;                                                                              // needs to be a global variable, so the state is saved across loops
-long unsigned lastTimeVentilatorStatusChange = 0;                                                           // used to keep track of the last time the ventilator status changed
-int min_humidity_for_override = MIN_HUMIDITY_FOR_OVERRIDE;                                                  // if the humidity inside is above this value, the ventilator will be turned on regardless of the dew point difference
-int max_hours_without_ventilation = MAX_HOURS_WITHOUT_VENTILATION;                                          // after this time, the ventilator will be turned on for at least VENTILATION_OVERRIDE_TIME minutes
-int ventilation_override_minutes = VENTILATION_OVERRIDE_MINUTES;                                            // amount of minutes to override the ventilation status
-bool ventilationOverride = false;                                                                           // used to override the ventilation status
-String baseTopic = "dewppoint-ventilator";                                                                  // used to store the MQTT base topic (can be an empty string if no base topic is desired)
-String requestedMode = "AUTO";                                                                              // default mode after reboot is AUTO
-int min_delta = MIN_Delta;                                                                                  // minimum difference between the dew points inside and outside to turn on the ventilator
-int hysteresis = HYSTERESIS;                                                                                // hysteresis for turning off the ventilator
-int tempInside_min = TEMPINSIDE_MIN;                                                                        // minimum temperature inside to turn on the ventilator
-int tempOutside_min = TEMPOUTSIDE_MIN;                                                                      // minimum temperature outside to turn on the ventilator
-int tempOutside_max = TEMPOUTSIDE_MAX;                                                                      // maximum temperature outside to turn on the ventilator
-float correction_temp_inside = CORRECTION_TEMP_INSIDE;                                                      // correction value for indoor sensor temperature
-float correction_temp_outside = CORRECTION_TEMP_OUTSIDE;                                                    // correction value for outdoor sensor temperature
-float correction_humidity_inside = CORRECTION_HUMIDITY_INSIDE;                                              // correction value for indoor sensor humidity
-float correction_humidity_outside = CORRECTION_HUMIDITY_OUTSIDE;                                            // correction value for outdoor sensor humidity
-bool stopSleeping = false;                                                                                  // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
+long unsigned maxMilliSecondsWithoutWiFi = 300000UL;               // maximum time without wifi after which we perform a full reboot
+long unsigned lastTimeWiFiOK = ULONG_MAX;                          // used to keep track of the last time the WiFi was connected
+String startupTime;                                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
+bool ventilatorStatus = false;                                     // needs to be a global variable, so the state is saved across loops
+long unsigned lastTimeVentilatorStatusChange = 0;                  // used to keep track of the last time the ventilator status changed
+int min_humidity_for_override = MIN_HUMIDITY_FOR_OVERRIDE;         // if the humidity inside is above this value, the ventilator will be turned on regardless of the dew point difference
+int max_hours_without_ventilation = MAX_HOURS_WITHOUT_VENTILATION; // after this time, the ventilator will be turned on for at least VENTILATION_OVERRIDE_TIME minutes
+int ventilation_override_minutes = VENTILATION_OVERRIDE_MINUTES;   // amount of minutes to override the ventilation status
+bool ventilationOverride = false;                                  // used to override the ventilation status
+String baseTopic = "dewppoint-ventilator";                         // used to store the MQTT base topic (can be an empty string if no base topic is desired)
+String requestedMode = "AUTO";                                     // default mode after reboot is AUTO
+int min_delta = MIN_Delta;                                         // minimum difference between the dew points inside and outside to turn on the ventilator
+int hysteresis = HYSTERESIS;                                       // hysteresis for turning off the ventilator
+int tempInside_min = TEMPINSIDE_MIN;                               // minimum temperature inside to turn on the ventilator
+int tempOutside_min = TEMPOUTSIDE_MIN;                             // minimum temperature outside to turn on the ventilator
+int tempOutside_max = TEMPOUTSIDE_MAX;                             // maximum temperature outside to turn on the ventilator
+float correction_temp_inside = CORRECTION_TEMP_INSIDE;             // correction value for indoor sensor temperature
+float correction_temp_outside = CORRECTION_TEMP_OUTSIDE;           // correction value for outdoor sensor temperature
+float correction_humidity_inside = CORRECTION_HUMIDITY_INSIDE;     // correction value for indoor sensor humidity
+float correction_humidity_outside = CORRECTION_HUMIDITY_OUTSIDE;   // correction value for outdoor sensor humidity
+bool stopSleeping = false;                                         // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
+long unsigned lastTimeHeaterOn = 0;                                // last time the heater was turned on
+
+// config map to track changes
 bool configChangedMap[13] = {true, true, true, true, true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
-#define CONFIG_IDX_MODE 0                                                                                   // index of the configuration value in the configuration map
-#define CONFIG_IDX_MIN_DELTA 1                                                                              // index of the configuration value in the configuration map
-#define CONFIG_IDX_HYSTERESIS 2                                                                             // index of the configuration value in the configuration map
-#define CONFIG_IDX_TEMPINSIDE_MIN 3                                                                         // index of the configuration value in the configuration map
-#define CONFIG_IDX_TEMPOUTSIDE_MIN 4                                                                        // index of the configuration value in the configuration map
-#define CONFIG_IDX_TEMPOUTSIDE_MAX 5                                                                        // index of the configuration value in the configuration map
-#define CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE 6                                                              // index of the configuration value in the configuration map
-#define CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION 7                                                          // index of the configuration value in the configuration map
-#define CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES 8                                                           // index of the configuration value in the configuration map
+#define CONFIG_IDX_MODE 0
+#define CONFIG_IDX_MIN_DELTA 1
+#define CONFIG_IDX_HYSTERESIS 2
+#define CONFIG_IDX_TEMPINSIDE_MIN 3
+#define CONFIG_IDX_TEMPOUTSIDE_MIN 4
+#define CONFIG_IDX_TEMPOUTSIDE_MAX 5
+#define CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE 6
+#define CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION 7
+#define CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES 8
 #define CONFIG_IDX_CORRECTION_TEMP_INSIDE 9
 #define CONFIG_IDX_CORRECTION_TEMP_OUTSIDE 10
 #define CONFIG_IDX_CORRECTION_HUMIDITY_INSIDE 11
@@ -78,8 +82,8 @@ MQTTClient mqttClient;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, TIME_SERVER, 3600, 60000);
 
-DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE);    // The indoor sensor is now addressed with dhtInside
-DHT dhtOutside(DHTPIN_OUTSIDE, DHTTYPE_OUTSIDE); // The outdoor sensor is now addressed with dhtOutside
+DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE); // The indoor sensor is now addressed with dhtInside
+SHT31 sensorOutside(0x44);                    // The outdoor sensor is now addressed with sensorOutside
 
 /**
  * This struct that represents the result of checking the DHT sensors.
@@ -120,14 +124,16 @@ void setup()
 
     digitalWrite(LED_BUILTIN_RED, LOW); // Turn on LED to show we have power
 
-    Serial.begin(115200); // Start serial communication
+    Serial.begin(115200);  // Start serial communication
+    Wire.begin();          // Start I2C communication
+    Wire.setClock(100000); // Set I2C clock to 100kHz
 
     initializeWiFi(); // Initialize WiFi connection
 
     Serial.println(F("Testing sensors..."));
 
-    dhtInside.begin();  // Start indoor sensor
-    dhtOutside.begin(); // Start outdoor sensor
+    dhtInside.begin();     // Start indoor sensor
+    sensorOutside.begin(); // Start outdoor sensor
 
     // set baseTopic to use for MQTT messages
 #ifdef SECRET_MQTT_BASETOPIC
@@ -214,6 +220,10 @@ void loop()
             Serial.println(" - no heartbeat sent");
         }
 
+        if(i > 1 && sensorOutside.isHeaterOn()){ // turn off heater after 2 seconds
+            setSensorOutsideHeaterMode(false);
+        }
+
         // if an MQTT command was received, stop sleeping and process the command
         if (stopSleeping)
         {
@@ -221,7 +231,7 @@ void loop()
             break;
         }
         delay(1000);
-        ESP.wdtFeed();
+        ESP.wdtFeed(); // feed the watchdog
     }
 }
 
@@ -376,10 +386,22 @@ SensorValues getSensorValues()
 {
     SensorValues result = {0, 0, 0, 0, true, ""};
 
-    result.humidityInside = dhtInside.readHumidity() + correction_humidity_inside;    // Read indoor humidity and store it under "h1"
-    result.tempInside = dhtInside.readTemperature() + correction_temp_inside;         // Read indoor temperature and store it under "t1"
-    result.humidityOutside = dhtOutside.readHumidity() + correction_humidity_outside; // Read outdoor humidity and store it under "h2"
-    result.tempOutside = dhtOutside.readTemperature() + correction_temp_outside;      // Read outdoor temperature and store it under "t2"
+    result.humidityInside = dhtInside.readHumidity() + correction_humidity_inside;      // Read indoor humidity and store it under "h1"
+    result.tempInside = dhtInside.readTemperature() + correction_temp_inside;           // Read indoor temperature and store it under "t1"
+    result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside; // Read outdoor humidity and store it under "h2"
+    result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;      // Read outdoor temperature and store it under "t2"
+
+    // if the humidity outside is above 80% and the heater has not been on for at least 3 minutes, turn on the heater
+    // heater should not run more than 3 minutes and cool down for at least 3 minutes between runs
+    if (result.humidityOutside > 80 && lastTimeHeaterOn < millis() - 180000)
+    {
+        lastTimeHeaterOn = millis();
+        setSensorOutsideHeaterMode(true);
+    }
+    else
+    {
+        setSensorOutsideHeaterMode(false);
+    }
 
     if (isnan(result.humidityInside) || isnan(result.tempInside) || result.humidityInside > 100 || result.humidityInside < 1 || result.tempInside < -40 || result.tempInside > 80)
     {
@@ -398,23 +420,41 @@ SensorValues getSensorValues()
         Serial.println(F("sensor inside OK"));
     }
 
-    if (isnan(result.humidityOutside) || isnan(result.tempOutside) || result.humidityOutside > 100 || result.humidityOutside < 1 || result.tempOutside < -40 || result.tempOutside > 80)
+    if (sensorOutside.getError() != 0x00)
     {
         Serial.println(F("Error reading from sensor outside."));
-        Serial.print(F("humidity: "));
-        Serial.print(result.humidityOutside);
-        Serial.print(F("%  temperature: "));
-        Serial.print(result.tempOutside);
-        Serial.println(F("°C"));
+        Serial.print(F("error code: "));
+        Serial.println(sensorOutside.getError());
         result.sensorsOK = false;
         result.errorReasoun.concat("Error reading from sensor outside. ");
     }
     else
     {
+        Serial.print("Sensor outside error: ");
+        Serial.println(sensorOutside.getError());
         Serial.println(F("sensor outside OK"));
     }
 
     return result;
+}
+
+void setSensorOutsideHeaterMode(bool on)
+{
+    if (on)
+    {
+        sensorOutside.heatOn();
+    }
+    else
+    {
+        sensorOutside.heatOff();
+    }
+
+    Serial.println("-> Sensor outside heater " + String(on ? "ON" : "OFF"));
+
+    if(mqttClient.connected())
+    {
+        mqttClient.publish(baseTopic + "sensor-outside/heater", on ? "1" : "0", true, 1);
+    }
 }
 
 /**

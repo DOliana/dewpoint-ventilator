@@ -2,6 +2,18 @@
 
 **notice**: this is still a work in prorgess. I try to keep the main branch in a stable state and will try to fix issues if any come up / are reported but I do this in my spare time so...
 
+- [abstract](#abstract)
+- [project setup](#project-setup)
+  - [configuration](#configuration)
+- [features](#features)
+  - [telemetry topics](#telemetry-topics)
+  - [config topics](#config-topics)
+  - [log topics](#log-topics)
+  - [special topics](#special-topics)
+- [notes](#notes)
+- [learnings](#learnings)
+
+
 ## abstract
 
 This was adpated to work on an ESP 8266 (I used the Huzzah feather) and to add some connectivity. I added:
@@ -31,18 +43,30 @@ configuration is mainly done in separate header files:
 
 ## features
 
-Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set in `settings.h` - if not set it will be omitted.)
+- MQTT (`BASETOPIC` can be set in `settings.h` - if not set it will be omitted.)
+  - sensor data
+  - config status
+  - change configuration
+  - heartbeat
+  - ventilation status
+  - basic logs
+- periodic ventilation even when ventilation should not occur according to dewpoints
 
 ### telemetry topics
 
 - `BASETOPIC/ventilation/sensor-outside/temperature`: Outside sensor - current temperature
 - `BASETOPIC/ventilation/sensor-outside/humidity`: Outside sensor - current humidity
 - `BASETOPIC/ventilation/sensor-outside/dewpoint`: Outside sensor - current dewpoint temperature
+- `BASETOPIC/ventilation/sensor-outside/heater`: Outside sensor - integrated heater status (1 = ON, 0 = OFF)
 - `BASETOPIC/ventilation/sensor-inside/temperature`: Inside sensor - current temperature
 - `BASETOPIC/ventilation/sensor-inside/humidity`: Inside sensor - current humidity
 - `BASETOPIC/ventilation/sensor-inside/dewpoint`: Inside sensor - current dewpoint temperature
+- `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
+- `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
 
-### status topics
+### config topics
+
+All config values can be changed by appending `set` to the topic.
 
 - `BASETOPIC/config/mode`: Mode of the dewpoint ventilator. Can be `ON`, `OFF`, `AUTO`.
 - `BASETOPIC/config/deltaDPmin`: minimum difference between dewpoints before ventilator is turned on
@@ -50,22 +74,22 @@ Publishes sensor data via MQTT and listens to commands. (`BASETOPIC` can be set 
 - `BASETOPIC/config/tempInside_min`: minimum inside temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_min`: minimum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/tempOutside_max`: maximum outdoor temperature at which ventilation is activated
+- `BASETOPIC/config/correction_temp_inside`: offset for inside temperature
+- `BASETOPIC/config/correction_temp_outside`: offset for outside humidity
+- `BASETOPIC/config/correction_humidity_inside`: offset for inside humidity
+- `BASETOPIC/config/correction_humidity_outside`: offset for outside humidity
 - `BASETOPIC/config/overrideMinHumidity`:  if the humidity inside is above this value, the ventilator will be turned on periodically to prevent mold
 - `BASETOPIC/config/overrideMaxHoursWithoutVentilation`: after this time, the ventilator will be turned on for at least `overrideVentilationMinutes` minutes
 - `BASETOPIC/config/overrideVentilationMinutes`: amount of minutes to override the ventilation status
+
+### log topics
+
 - `BASETOPIC/log/startup`: startup time in UTC (requires internet to get current time from ntp server)
 - `BASETOPIC/log/heartbeat`: heartbeat timestamp in UTC - sent every 10 seconds
 - `BASETOPIC/log/ventilatorStatusReason`: Reason as string for the current state of the ventilator.
-- `BASETOPIC/ventilation/state`: State of the ventilator. Can be `ON`, `OFF`.
-- `BASETOPIC/ventilation/stateNum`: State of the ventilator. Can be `1`, `0` (with 1=ON and 0=OFF).
 
-### command (config) topics
+### special topics
 
-All config values can be changed by appending `set` to the topic. Below are examples or topics where only specific values are allowed
-
-- `BASETOPIC/config/mode/set`: allows to set the mode of the dewpoint ventilator. This can be any of `ON`, `OFF`, `AUTO`. This setting is not persisted across reboots and defaults to `AUTO`.
-- `BASETOPIC/config/deltaDPmin/set`: minimum difference between dewpoints before ventilator is turned on
-- `BASETOPIC/config/tempOutside_max/set`: maximum outdoor temperature at which ventilation is activated
 - `BASETOPIC/config/reset`: set this to `1` or `true` to reset the config values to the default config (aka what was in `settings.h`)
 
 ## notes
@@ -79,3 +103,4 @@ All config values can be changed by appending `set` to the topic. Below are exam
 - ESP8266 seems to be pretty resistant to interferences. It worked without the preventing measures mentioned in the original article (I only put the 1000 µF capacitor between + and - and left out all other capacitors & resistors that were meant to help with interferences)
 - It's really hard to debug issues that come up after longer operation (for some reason I see restarts every few > 5 days and have no idea what it is. My solution for now: design everything in a way that restarts are not a problem)
 - the longer I look at code the more ideas I get :-)
+- DHT21 sensors are not suite for outside use - humidity clogs up at some point during colder season
