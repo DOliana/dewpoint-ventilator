@@ -254,8 +254,8 @@ void calculateAndSetVentilatorStatus()
             delay(500); // wait for message to be sent
         }
 
-        Serial.println(F("Restarting in 5 seconds..."));
-        delay(5000);
+        Serial.println(F("Restarting in 10 seconds..."));
+        delay(10000);
         ESP.restart();
     }
     else
@@ -388,6 +388,7 @@ SensorValues getSensorValues()
 
     result.humidityInside = dhtInside.readHumidity() + correction_humidity_inside;      // Read indoor humidity and store it under "h1"
     result.tempInside = dhtInside.readTemperature() + correction_temp_inside;           // Read indoor temperature and store it under "t1"
+    sensorOutside.read();                                                               // Read outdoor sensor
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside; // Read outdoor humidity and store it under "h2"
     result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;      // Read outdoor temperature and store it under "t2"
 
@@ -405,13 +406,12 @@ SensorValues getSensorValues()
 
     if (isnan(result.humidityInside) || isnan(result.tempInside) || result.humidityInside > 100 || result.humidityInside < 1 || result.tempInside < -40 || result.tempInside > 80)
     {
-        Serial.println(F("Error reading from sensor inside:"));
-        Serial.print(F("humidity: "));
+        Serial.println(F("### Error reading from sensor inside: ###"));
+        Serial.print(F("-> humidity: "));
         Serial.print(result.humidityInside);
         Serial.print(F("%  temperature: "));
         Serial.print(result.tempInside);
         Serial.println(F("°C"));
-        Serial.println(result.humidityInside);
         result.sensorsOK = false;
         result.errorReasoun = "Error reading from sensor inside. ";
     }
@@ -625,6 +625,10 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe(baseTopic + "config/tempInside_min/set", 1);
                 mqttClient.subscribe(baseTopic + "config/tempOutside_min/set", 1);
                 mqttClient.subscribe(baseTopic + "config/tempOutside_max/set", 1);
+                mqttClient.subscribe(baseTopic + "config/correction_temp_inside/set", 1);
+                mqttClient.subscribe(baseTopic + "config/correction_temp_outside/set", 1);
+                mqttClient.subscribe(baseTopic + "config/correction_humidity_inside/set", 1);
+                mqttClient.subscribe(baseTopic + "config/correction_humidity_outside/set", 1);
                 mqttClient.subscribe(baseTopic + "config/minHumidityForcedVentilation/set", 1);
                 mqttClient.subscribe(baseTopic + "config/maxHoursWithoutVentForcedVentilation/set", 1);
                 mqttClient.subscribe(baseTopic + "config/forcedVentilationMinutes/set", 1);
@@ -736,16 +740,15 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/correction_temp_inside/set"))
     {
-        correction_temp_inside = payload.toInt();
+        correction_temp_inside = payload.toFloat();
         configChangedMap[CONFIG_IDX_CORRECTION_TEMP_INSIDE] = true;
         saveConfig();
         Serial.print("correction_temp_inside set to ");
         Serial.println(correction_temp_inside);
     }
-
     else if (topic.equals(baseTopic + "config/correction_temp_outside/set"))
     {
-        correction_temp_outside = payload.toInt();
+        correction_temp_outside = payload.toFloat();
         configChangedMap[CONFIG_IDX_CORRECTION_TEMP_OUTSIDE] = true;
         saveConfig();
         Serial.print("correction_temp_outside set to ");
@@ -753,7 +756,7 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/correction_humidity_inside/set"))
     {
-        correction_humidity_inside = payload.toInt();
+        correction_humidity_inside = payload.toFloat();
         configChangedMap[CONFIG_IDX_CORRECTION_HUMIDITY_INSIDE] = true;
         saveConfig();
         Serial.print("correction_humidity_inside set to ");
@@ -761,7 +764,7 @@ void mqttCallback(String &topic, String &payload)
     }
     else if (topic.equals(baseTopic + "config/correction_humidity_outside/set"))
     {
-        correction_humidity_outside = payload.toInt();
+        correction_humidity_outside = payload.toFloat();
         configChangedMap[CONFIG_IDX_CORRECTION_HUMIDITY_OUTSIDE] = true;
         saveConfig();
         Serial.print("correction_humidity_outside set to ");
