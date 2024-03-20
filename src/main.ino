@@ -155,9 +155,6 @@ void setup()
         resetConfig();
     }
 
-    // set last status change to now - max hours without ventilation so the ventilator will be turned on immediately if required
-    lastTimeVentilatorStatusChange = millis() - max_hours_without_ventilation * 60 * 60 * 1000;
-
     Serial.println("Setup complete");
     Serial.println();
 }
@@ -429,8 +426,6 @@ SensorValues getSensorValues()
  */
 void setVentilatorOn(bool running)
 {
-    // only update state when it changes
-    bool currentlyInRunningState = digitalRead(RELAIPIN) == RELAIS_ON;
     if (running == true)
     {
         digitalWrite(RELAIPIN, RELAIS_ON); // Turn on relay
@@ -449,17 +444,10 @@ void setVentilatorOn(bool running)
         lastTimeVentilatorStatusChange = millis();
         ventilatorStatus = running;
 
-    // only send MQTT message if the status has changed
-    if (ventilatorStatus != running)
-    {
-        // save time when ventilator status has changed
-        lastTimeVentilatorStatusChange = millis();
-        ventilatorStatus = running;
-
         if (mqttClient.connected())
         {
-            mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", false, 1);
-            mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", false, 1);
+            mqttClient.publish(baseTopic + "ventilation/state", running ? "ON" : "OFF", true, 1);
+            mqttClient.publish(baseTopic + "ventilation/stateNum", running ? "1" : "0", true, 1);
         }
     }
 }
