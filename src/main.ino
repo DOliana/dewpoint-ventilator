@@ -220,7 +220,8 @@ void loop()
             Serial.println(" - no heartbeat sent");
         }
 
-        if(i > 1 && sensorOutside.isHeaterOn()){ // turn off heater after 2 seconds
+        if (i > 30 && sensorOutside.isHeaterOn())
+        { // turn off heater after 30 seconds
             setSensorOutsideHeaterMode(false);
         }
 
@@ -384,25 +385,21 @@ void calculateAndSetVentilatorStatus()
  */
 SensorValues getSensorValues()
 {
-    SensorValues result = {0, 0, 0, 0, true, ""};
-
-    result.humidityInside = dhtInside.readHumidity() + correction_humidity_inside;      // Read indoor humidity and store it under "h1"
-    result.tempInside = dhtInside.readTemperature() + correction_temp_inside;           // Read indoor temperature and store it under "t1"
-    sensorOutside.read();                                                               // Read outdoor sensor
-    result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside; // Read outdoor humidity and store it under "h2"
-    result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;      // Read outdoor temperature and store it under "t2"
-
-    // if the humidity outside is above 80% and the heater has not been on for at least 3 minutes, turn on the heater
-    // heater should not run more than 3 minutes and cool down for at least 3 minutes between runs
-    if (result.humidityOutside > 80 && lastTimeHeaterOn < millis() - 180000)
-    {
-        lastTimeHeaterOn = millis();
-        setSensorOutsideHeaterMode(true);
-    }
-    else
+    // if the heater is on, turn it off to be able to read the sensor values
+    // this loop is reached at least once a minute, so since the heater should not run more than 3 minutes, we can turn it off here
+    if (sensorOutside.isHeaterOn())
     {
         setSensorOutsideHeaterMode(false);
+        delay(500); // wait for the heater to cool down
     }
+
+    SensorValues result = {0, 0, 0, 0, true, ""};
+
+    result.humidityInside = dhtInside.readHumidity() + correction_humidity_inside;
+    result.tempInside = dhtInside.readTemperature() + correction_temp_inside;
+    sensorOutside.read(); // Read outdoor sensor
+    result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
+    result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
 
     if (isnan(result.humidityInside) || isnan(result.tempInside) || result.humidityInside > 100 || result.humidityInside < 1 || result.tempInside < -40 || result.tempInside > 80)
     {
@@ -435,6 +432,17 @@ SensorValues getSensorValues()
         Serial.println(F("sensor outside OK"));
     }
 
+    // if the humidity outside is above 75% and the heater has not been on for the last 5 minutes, turn on the heater
+    // heater should not run more than 3 minutes and cool down for at least 3 minutes between runs
+    if (result.sensorsOK && result.humidityOutside > 75 && lastTimeHeaterOn < millis() - 300000)
+    {
+        setSensorOutsideHeaterMode(true);
+    }
+    else if (result.sensorsOK == false) // if the sensor is not working, turn off the heater (we will restart)
+    {
+        setSensorOutsideHeaterMode(false);
+    }
+
     return result;
 }
 
@@ -442,6 +450,7 @@ void setSensorOutsideHeaterMode(bool on)
 {
     if (on)
     {
+        lastTimeHeaterOn = millis();
         sensorOutside.heatOn();
     }
     else
@@ -451,7 +460,7 @@ void setSensorOutsideHeaterMode(bool on)
 
     Serial.println("-> Sensor outside heater " + String(on ? "ON" : "OFF"));
 
-    if(mqttClient.connected())
+    if (mqttClient.connected())
     {
         mqttClient.publish(baseTopic + "sensor-outside/heater", on ? "1" : "0", true, 1);
     }
