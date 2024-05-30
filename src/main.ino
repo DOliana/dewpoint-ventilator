@@ -952,7 +952,7 @@ String getTimeString()
  */
 bool saveConfig()
 {
-    StaticJsonDocument<400> doc;
+    JsonDocument doc;
     doc["mode"] = requestedMode;
     doc["deltaDPmin"] = min_delta;
     doc["hysteresis"] = hysteresis;
@@ -998,7 +998,7 @@ bool loadConfig()
         return false;
     }
 
-    StaticJsonDocument<400> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, configFile);
 
     if (error)
