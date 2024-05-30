@@ -57,6 +57,7 @@ float correction_humidity_inside = CORRECTION_HUMIDITY_INSIDE;     // correction
 float correction_humidity_outside = CORRECTION_HUMIDITY_OUTSIDE;   // correction value for outdoor sensor humidity
 bool stopSleeping = false;                                         // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
 long unsigned lastTimeHeaterOn = 0;                                // last time the heater was turned on
+bool isOutsideSensorHeaterOn = false;                              // flag to keep track of the heater status of the outdoor sensor
 
 // config map to track changes
 bool configChangedMap[13] = {true, true, true, true, true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
@@ -195,7 +196,7 @@ void loop()
 
     digitalWrite(LED_BUILTIN_BLUE, LOW); // Turn on LED when loop is active
     connectMQTTIfDisconnected();         // Connect to MQTT if not connected do this at the beginning so it can run in the background
-    publishConfigIfChanded();
+    publishConfigIfChanged();
     stopSleeping = false; // wifi connection resets this during startup. if we are here we do not need it.
     calculateAndSetVentilatorStatus();
 
@@ -218,11 +219,6 @@ void loop()
             Serial.print("MQTT connected: false, Wifi connected: ");
             Serial.print(WiFi.status() == WL_CONNECTED ? "true" : "false");
             Serial.println(" - no heartbeat sent");
-        }
-
-        if (i > 30 && sensorOutside.isHeaterOn())
-        { // turn off heater after 30 seconds
-            setSensorOutsideHeaterMode(false);
         }
 
         // if an MQTT command was received, stop sleeping and process the command
@@ -373,7 +369,9 @@ void calculateAndSetVentilatorStatus()
         mqttClient.publish(baseTopic + "sensor-outside/humidity", String(sensorValues.humidityOutside, 2), false, 1);
         mqttClient.publish(baseTopic + "sensor-outside/dewpoint", String(dewPoint_outside, 2), false, 1);
         mqttClient.publish(baseTopic + "log/ventilatorStatusReason", ventilatorStatusReason, false, 1);
-        Serial.println(F("published to MQTT"));
+        setSensorOutsideHeaterMode(isOutsideSensorHeaterOn); // publish heater status
+
+        Serial.println(F("published sensor values"));
     }
 }
 
@@ -387,10 +385,11 @@ SensorValues getSensorValues()
 {
     // if the heater is on, turn it off to be able to read the sensor values
     // this loop is reached at least once a minute, so since the heater should not run more than 3 minutes, we can turn it off here
-    if (sensorOutside.isHeaterOn())
+    if (isOutsideSensorHeaterOn)
     {
+        Serial.println("-> Heater is on - turning off for reading sensor values");
         setSensorOutsideHeaterMode(false);
-        delay(500); // wait for the heater to cool down
+        delay(1000); // wait for the sensor to cool down
     }
 
     SensorValues result = {0, 0, 0, 0, true, ""};
@@ -432,10 +431,11 @@ SensorValues getSensorValues()
         Serial.println(F("sensor outside OK"));
     }
 
-    // if the humidity outside is above 75% and the heater has not been on for the last 5 minutes, turn on the heater
-    // heater should not run more than 3 minutes and cool down for at least 3 minutes between runs
-    if (result.sensorsOK && result.humidityOutside > 75 && lastTimeHeaterOn < millis() - 300000)
+    // if the humidity outside is above 75% and the heater has not been on for the last 5 minutes, turn on the heater.
+    // The heater should not run more than 3 minutes and cool down for at least 3 minutes between runs
+    if (result.sensorsOK && result.humidityOutside > 75 && lastTimeHeaterOn < (unsigned long)(millis() - min(millis(), 300000UL)))
     {
+        Serial.println("Current millis: " + String(millis()) + ", Last time heater on: " + String(lastTimeHeaterOn));
         setSensorOutsideHeaterMode(true);
     }
     else if (result.sensorsOK == false) // if the sensor is not working, turn off the heater (we will restart)
@@ -448,17 +448,24 @@ SensorValues getSensorValues()
 
 void setSensorOutsideHeaterMode(bool on)
 {
-    if (on)
+    if (on && millis() < 180000UL)
+    {
+        // do not turn on the heater in the first 3 minutes
+        Serial.println("-> Heater not turned on in the first 3 minutes");
+    }
+    else if (on)
     {
         lastTimeHeaterOn = millis();
+        isOutsideSensorHeaterOn = true;
         sensorOutside.heatOn();
     }
     else
     {
+        isOutsideSensorHeaterOn = false;
         sensorOutside.heatOff();
     }
 
-    Serial.println("-> Sensor outside heater " + String(on ? "ON" : "OFF"));
+    Serial.println("-> Sensor outside heater " + String(isOutsideSensorHeaterOn ? "ON" : "OFF"));
 
     if (mqttClient.connected())
     {
@@ -844,7 +851,7 @@ void publishConfigValueIfChanged(short configMapIndex, String valueName, String 
  * minimum outside temperature, and maximum outside temperature.
  * If the MQTT client is not connected, this function does nothing.
  */
-void publishConfigIfChanded()
+void publishConfigIfChanged()
 {
     // only publish if value has changed
     publishConfigValueIfChanged(CONFIG_IDX_MODE, "mode", requestedMode);
