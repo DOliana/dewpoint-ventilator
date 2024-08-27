@@ -35,7 +35,7 @@ const char *ssid = SECRET_WIFI_SSID;
 const char *password = SECRET_WIFI_PASSWORD;
 const char *wifi_hostname = mqtt_clientID;
 
-long unsigned maxMilliSecondsWithoutWiFi = 300000UL;               // maximum time without wifi after which we perform a full reboot
+long unsigned maxMilliSecondsWithoutWiFi = 1800000UL;              // maximum time without wifi after which we perform a full reboot
 long unsigned lastTimeWiFiOK = ULONG_MAX;                          // used to keep track of the last time the WiFi was connected
 String startupTime;                                                // startup time - if set its been sent. Used to prevent sending the startup message multiple times
 bool ventilatorStatus = false;                                     // needs to be a global variable, so the state is saved across loops
@@ -58,6 +58,7 @@ float correction_humidity_outside = CORRECTION_HUMIDITY_OUTSIDE;   // correction
 bool stopSleeping = false;                                         // a simple flag to prevent the microcontroller from going to sleep - set from a different thread on wifi-connected
 long unsigned lastTimeHeaterOn = 0;                                // last time the heater was turned on
 bool isOutsideSensorHeaterOn = false;                              // flag to keep track of the heater status of the outdoor sensor
+float lastHumidityOutside = 0;                                     // last humidity value of the outdoor sensor - used to average the values
 
 // config map to track changes
 bool configChangedMap[13] = {true, true, true, true, true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
@@ -400,6 +401,18 @@ SensorValues getSensorValues()
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
     result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
 
+    // average the humidity values of the outdoor sensor to smooth the readings
+    if (lastHumidityOutside == 0)
+    {
+        lastHumidityOutside = result.humidityOutside;
+    }
+    else
+    {
+        float averagedHumidity = (lastHumidityOutside + result.humidityOutside) / 2;
+        lastHumidityOutside = result.humidityOutside;
+        result.humidityOutside = averagedHumidity;
+    }
+
     if (isnan(result.humidityInside) || isnan(result.tempInside) || result.humidityInside > 100 || result.humidityInside < 1 || result.tempInside < -40 || result.tempInside > 80)
     {
         Serial.println(F("### Error reading from sensor inside: ###"));
@@ -646,7 +659,7 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe(baseTopic + "config/correction_humidity_inside/set", 1);
                 mqttClient.subscribe(baseTopic + "config/correction_humidity_outside/set", 1);
                 mqttClient.subscribe(baseTopic + "config/minHumidityForcedVentilation/set", 1);
-                mqttClient.subscribe(baseTopic + "config/maxHoursWithoutVentForcedVentilation/set", 1);
+                mqttClient.subscribe(baseTopic + "config/maxHoursWithoutForcedVentilation/set", 1);
                 mqttClient.subscribe(baseTopic + "config/forcedVentilationMinutes/set", 1);
                 mqttClient.subscribe(baseTopic + "config/reset", 1);
                 Serial.println("command topics subscribed");
@@ -794,7 +807,7 @@ void mqttCallback(String &topic, String &payload)
         Serial.print("min_humidity_for_override set to ");
         Serial.println(min_humidity_for_override);
     }
-    else if (topic.equals(baseTopic + "config/maxHoursWithoutVentForcedVentilation/set"))
+    else if (topic.equals(baseTopic + "config/maxHoursWithoutForcedVentilation/set"))
     {
         max_hours_without_ventilation = payload.toInt();
         configChangedMap[CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION] = true;
@@ -861,7 +874,7 @@ void publishConfigIfChanged()
     publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MIN, "tempOutside_min", String(tempOutside_min));
     publishConfigValueIfChanged(CONFIG_IDX_TEMPOUTSIDE_MAX, "tempOutside_max", String(tempOutside_max));
     publishConfigValueIfChanged(CONFIG_IDX_MIN_HUMIDITY_FOR_OVERRIDE, "minHumidityForcedVentilation", String(min_humidity_for_override));
-    publishConfigValueIfChanged(CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION, "maxHoursWithoutVentForcedVentilation", String(max_hours_without_ventilation));
+    publishConfigValueIfChanged(CONFIG_IDX_MAX_HOURS_WITHOUT_VENTILATION, "maxHoursWithoutForcedVentilation", String(max_hours_without_ventilation));
     publishConfigValueIfChanged(CONFIG_IDX_VENTILATION_OVERRIDE_MINUTES, "forcedVentilationMinutes", String(ventilation_override_minutes));
     publishConfigValueIfChanged(CONFIG_IDX_CORRECTION_TEMP_INSIDE, "correction_temp_inside", String(correction_temp_inside));
     publishConfigValueIfChanged(CONFIG_IDX_CORRECTION_TEMP_OUTSIDE, "correction_temp_outside", String(correction_temp_outside));

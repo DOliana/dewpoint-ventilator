@@ -78,9 +78,9 @@ All config values can be changed by appending `set` to the topic.
 - `BASETOPIC/config/correction_temp_outside`: offset for outside humidity
 - `BASETOPIC/config/correction_humidity_inside`: offset for inside humidity
 - `BASETOPIC/config/correction_humidity_outside`: offset for outside humidity
-- `BASETOPIC/config/overrideMinHumidity`:  if the humidity inside is above this value, the ventilator will be turned on periodically to prevent mold
-- `BASETOPIC/config/overrideMaxHoursWithoutVentilation`: after this time, the ventilator will be turned on for at least `overrideVentilationMinutes` minutes
-- `BASETOPIC/config/overrideVentilationMinutes`: amount of minutes to override the ventilation status
+- `BASETOPIC/config/minHumidityForcedVentilation`:  if the humidity inside is above this value, the ventilator will be turned on periodically to prevent mold
+- `BASETOPIC/config/maxHoursWithoutForcedVentilation`: after this time, the ventilator will be turned on for at least `overrideVentilationMinutes` minutes
+- `BASETOPIC/config/forcedVentilationMinutes`: amount of minutes to override the ventilation status
 
 ### log topics
 
