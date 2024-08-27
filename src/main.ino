@@ -410,9 +410,10 @@ SensorValues getSensorValues()
     result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
     float outsideReferenceTemperature = getSensorOutsideReferenceTemperature();
     // if the reference temperature is higher than the outside temperature, use the reference temperature (only check for higher temperatures, since only that is caused by the sun shining on the sensor)
-    if(outsideReferenceTemperature != 0 && outsideReferenceTemperature - result.tempOutside > 1)
+    if(outsideReferenceTemperature != 0 && outsideReferenceTemperature - result.tempOutside < -1)
     {
-        Serial.println("-> Using reference temperature for outside sensor: " + String(outsideReferenceTemperature));
+        mqttClient.publish(baseTopic + "log/message", "using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside), false, 1);
+        Serial.println("-> using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside));
         result.tempOutside = outsideReferenceTemperature;
     }
 
@@ -476,7 +477,9 @@ float getSensorOutsideReferenceTemperature()
 {
     if (outsideSensorReferenceTemperature != 0 && millis() - lastTimeSensorOutsideReferenceTemperature > MAX_AGE_OUTSIDE_REFERENCE_TEMPERATURE)
     {
+        Serial.println("-> Reference temperature too old - resetting");
         setOutsideReferenceTemperature(0);
+        mqttClient.publish(baseTopic + "log/message", "Reference temperature too old - resetting", false, 1);
         return 0;
     }
 
@@ -870,8 +873,6 @@ void mqttCallback(String &topic, String &payload)
     else if (topic.equals(baseTopic + "sensor-outside/reference_temperature/set"))
     {
         setOutsideReferenceTemperature(payload.toFloat());
-        Serial.print("Reference temperature set to ");
-        Serial.println(payload);
     }
     else
     {
