@@ -403,14 +403,15 @@ SensorValues getSensorValues()
 
     SensorValues result = {0, 0, 0, 0, true, ""};
 
-    result.humidityInside = dhtInside.readHumidity() + correction_humidity_inside;
+    result.humidi
+    tyInside = dhtInside.readHumidity() + correction_humidity_inside;
     result.tempInside = dhtInside.readTemperature() + correction_temp_inside;
     sensorOutside.read(); // Read outdoor sensor
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
     result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
     float outsideReferenceTemperature = getSensorOutsideReferenceTemperature();
     // if the reference temperature is higher than the outside temperature, use the reference temperature (only check for higher temperatures, since only that is caused by the sun shining on the sensor)
-    if (outsideReferenceTemperature != 0 && (outsideReferenceTemperature - result.tempOutside) > 1)
+    if (outsideReferenceTemperature != 0 && outsideReferenceTemperature - result.tempOutside < -1)
     {
         mqttClient.publish(baseTopic + "log/message", "using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside), false, 1);
         Serial.println("-> using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside));
