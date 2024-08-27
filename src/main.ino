@@ -409,7 +409,8 @@ SensorValues getSensorValues()
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
     result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
     float outsideReferenceTemperature = getSensorOutsideReferenceTemperature();
-    if(outsideReferenceTemperature != 0 && abs(outsideReferenceTemperature - result.tempOutside) > 1)
+    // if the reference temperature is higher than the outside temperature, use the reference temperature (only check for higher temperatures, since only that is caused by the sun shining on the sensor)
+    if(outsideReferenceTemperature != 0 && outsideReferenceTemperature - result.tempOutside > 1)
     {
         Serial.println("-> Using reference temperature for outside sensor: " + String(outsideReferenceTemperature));
         result.tempOutside = outsideReferenceTemperature;
