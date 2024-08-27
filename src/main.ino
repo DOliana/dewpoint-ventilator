@@ -407,7 +407,13 @@ SensorValues getSensorValues()
     result.tempInside = dhtInside.readTemperature() + correction_temp_inside;
     sensorOutside.read(); // Read outdoor sensor
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
-    result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside + getSensorOutsideReferenceTemperature();
+    result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
+    float outsideReferenceTemperature = getSensorOutsideReferenceTemperature();
+    if(outsideReferenceTemperature != 0 && abs(outsideReferenceTemperature - result.tempOutside) > 1)
+    {
+        Serial.println("-> Using reference temperature for outside sensor: " + String(outsideReferenceTemperature));
+        result.tempOutside = outsideReferenceTemperature;
+    }
 
     // average the humidity values of the outdoor sensor to smooth the readings
     if (lastHumidityOutside == 0)
