@@ -91,6 +91,8 @@ All config values can be changed by appending `set` to the topic.
 ### special topics
 
 - `BASETOPIC/config/reset`: set this to `1` or `true` to reset the config values to the default config (aka what was in `settings.h`)
+- `BASETOPIC/sensor-outside/reference_temperature/set`: current outside reference temperature to use. Overrides temperature from the sensor for a limited amount of time (1 hour). Helps avoid measuring errors when the sensor is in direct sun light.
+- `BASETOPIC/sensor-outside/reference_temperature`: current value of reference temperature.
 
 ## notes
 

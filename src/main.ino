@@ -59,6 +59,8 @@ bool stopSleeping = false;                                         // a simple f
 long unsigned lastTimeHeaterOn = 0;                                // last time the heater was turned on
 bool isOutsideSensorHeaterOn = false;                              // flag to keep track of the heater status of the outdoor sensor
 float lastHumidityOutside = 0;                                     // last humidity value of the outdoor sensor - used to average the values
+float outsideSensorReferenceTemperature = 0;                       // reference temperature for the outdoor sensor
+long unsigned lastTimeSensorOutsideReferenceTemperature = 0;       // last time the reference temperature was set
 
 // config map to track changes
 bool configChangedMap[13] = {true, true, true, true, true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
@@ -75,6 +77,12 @@ bool configChangedMap[13] = {true, true, true, true, true, true, true, true, tru
 #define CONFIG_IDX_CORRECTION_TEMP_OUTSIDE 10
 #define CONFIG_IDX_CORRECTION_HUMIDITY_INSIDE 11
 #define CONFIG_IDX_CORRECTION_HUMIDITY_OUTSIDE 12
+
+const float HEATER_HUMIDITY_THRESHOLD = 75;
+const unsigned long HEATER_COOLDOWN_DELAY = 1000L;
+const unsigned long MAX_HEATER_RUNTIME = 300000UL;
+
+const unsigned long MAX_AGE_OUTSIDE_REFERENCE_TEMPERATURE = 3600000UL; // 1 hour
 
 WiFiEventHandler wifiConnectHandler;
 
@@ -100,7 +108,7 @@ struct SensorValues
     float tempOutside;
 
     bool sensorsOK;
-    String errorReasoun;
+    String errorReason;
 };
 
 /**
@@ -247,7 +255,7 @@ void calculateAndSetVentilatorStatus()
     {
         if (mqttClient.connected())
         {
-            mqttClient.publish(baseTopic + "log/status", "sensors show errors: " + sensorValues.errorReasoun, false, 1);
+            mqttClient.publish(baseTopic + "log/status", "sensors show errors: " + sensorValues.errorReason, false, 1);
             Serial.println(F("Error message sent"));
             delay(500); // wait for message to be sent
         }
@@ -390,7 +398,7 @@ SensorValues getSensorValues()
     {
         Serial.println("-> Heater is on - turning off for reading sensor values");
         setSensorOutsideHeaterMode(false);
-        delay(1000); // wait for the sensor to cool down
+        delay(HEATER_COOLDOWN_DELAY); // wait for the sensor to cool down
     }
 
     SensorValues result = {0, 0, 0, 0, true, ""};
@@ -400,6 +408,14 @@ SensorValues getSensorValues()
     sensorOutside.read(); // Read outdoor sensor
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
     result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
+    float outsideReferenceTemperature = getSensorOutsideReferenceTemperature();
+    // if the reference temperature is higher than the outside temperature, use the reference temperature (only check for higher temperatures, since only that is caused by the sun shining on the sensor)
+    if(outsideReferenceTemperature != 0 && outsideReferenceTemperature - result.tempOutside < -1)
+    {
+        mqttClient.publish(baseTopic + "log/message", "using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside), false, 1);
+        Serial.println("-> using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside));
+        result.tempOutside = outsideReferenceTemperature;
+    }
 
     // average the humidity values of the outdoor sensor to smooth the readings
     if (lastHumidityOutside == 0)
@@ -422,7 +438,7 @@ SensorValues getSensorValues()
         Serial.print(result.tempInside);
         Serial.println(F("°C"));
         result.sensorsOK = false;
-        result.errorReasoun = "Error reading from sensor inside. ";
+        result.errorReason = "Error reading from sensor inside. ";
     }
     else
     {
@@ -435,18 +451,16 @@ SensorValues getSensorValues()
         Serial.print(F("error code: "));
         Serial.println(sensorOutside.getError());
         result.sensorsOK = false;
-        result.errorReasoun.concat("Error reading from sensor outside. ");
+        result.errorReason.concat("Error reading from sensor outside. ");
     }
     else
     {
-        Serial.print("Sensor outside error: ");
-        Serial.println(sensorOutside.getError());
         Serial.println(F("sensor outside OK"));
     }
 
     // if the humidity outside is above 75% and the heater has not been on for the last 5 minutes, turn on the heater.
     // The heater should not run more than 3 minutes and cool down for at least 3 minutes between runs
-    if (result.sensorsOK && result.humidityOutside > 75 && lastTimeHeaterOn < (unsigned long)(millis() - min(millis(), 300000UL)))
+    if (result.sensorsOK && result.humidityOutside > HEATER_HUMIDITY_THRESHOLD && lastTimeHeaterOn < (unsigned long)(millis() - min(millis(), MAX_HEATER_RUNTIME)))
     {
         Serial.println("Current millis: " + String(millis()) + ", Last time heater on: " + String(lastTimeHeaterOn));
         setSensorOutsideHeaterMode(true);
@@ -457,6 +471,30 @@ SensorValues getSensorValues()
     }
 
     return result;
+}
+
+float getSensorOutsideReferenceTemperature()
+{
+    if (outsideSensorReferenceTemperature != 0 && millis() - lastTimeSensorOutsideReferenceTemperature > MAX_AGE_OUTSIDE_REFERENCE_TEMPERATURE)
+    {
+        Serial.println("-> Reference temperature too old - resetting");
+        setOutsideReferenceTemperature(0);
+        mqttClient.publish(baseTopic + "log/message", "Reference temperature too old - resetting", false, 1);
+        return 0;
+    }
+
+    return outsideSensorReferenceTemperature;
+}
+
+void setOutsideReferenceTemperature(float temp)
+{
+    outsideSensorReferenceTemperature = temp;
+    lastTimeSensorOutsideReferenceTemperature = millis();
+    Serial.println("-> Reference temperature set to " + String(temp));
+    if (mqttClient.connected())
+    {
+        mqttClient.publish(baseTopic + "sensor-outside/reference_temperature", String(temp), false, 1);
+    }
 }
 
 void setSensorOutsideHeaterMode(bool on)
@@ -662,6 +700,8 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe(baseTopic + "config/maxHoursWithoutForcedVentilation/set", 1);
                 mqttClient.subscribe(baseTopic + "config/forcedVentilationMinutes/set", 1);
                 mqttClient.subscribe(baseTopic + "config/reset", 1);
+
+                mqttClient.subscribe(baseTopic + "sensor-outside/reference_temperature/set", 1);
                 Serial.println("command topics subscribed");
 
                 if (startupTime == NULL)
@@ -829,6 +869,10 @@ void mqttCallback(String &topic, String &payload)
         {
             resetConfig();
         }
+    }
+    else if (topic.equals(baseTopic + "sensor-outside/reference_temperature/set"))
+    {
+        setOutsideReferenceTemperature(payload.toFloat());
     }
     else
     {
