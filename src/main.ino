@@ -59,6 +59,8 @@ bool stopSleeping = false;                                         // a simple f
 long unsigned lastTimeHeaterOn = 0;                                // last time the heater was turned on
 bool isOutsideSensorHeaterOn = false;                              // flag to keep track of the heater status of the outdoor sensor
 float lastHumidityOutside = 0;                                     // last humidity value of the outdoor sensor - used to average the values
+float outsideSensorReferenceTemperature = 0;                       // reference temperature for the outdoor sensor
+long unsigned lastTimeSensorOutsideReferenceTemperature = 0;       // last time the reference temperature was set
 
 // config map to track changes
 bool configChangedMap[13] = {true, true, true, true, true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
@@ -399,7 +401,7 @@ SensorValues getSensorValues()
     result.tempInside = dhtInside.readTemperature() + correction_temp_inside;
     sensorOutside.read(); // Read outdoor sensor
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
-    result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
+    result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside + getSensorOutsideReferenceTemperature();
 
     // average the humidity values of the outdoor sensor to smooth the readings
     if (lastHumidityOutside == 0)
@@ -457,6 +459,28 @@ SensorValues getSensorValues()
     }
 
     return result;
+}
+
+float getSensorOutsideReferenceTemperature()
+{
+    if(outsideSensorReferenceTemperature != 0 && millis() - lastTimeSensorOutsideReferenceTemperature > 3600000UL)
+    {
+        setOutsideReferenceTemperature(0);
+        return 0;
+    }
+
+    return outsideSensorReferenceTemperature;
+}
+
+void setOutsideReferenceTemperature(float temp)
+{
+    outsideSensorReferenceTemperature = temp;
+    lastTimeSensorOutsideReferenceTemperature = millis();
+    Serial.println("-> Reference temperature set to " + String(temp));
+    if (mqttClient.connected())
+    {
+        mqttClient.publish(baseTopic + "sensor-outside/reference_temperature", String(temp), false, 1);
+    }
 }
 
 void setSensorOutsideHeaterMode(bool on)
@@ -662,6 +686,8 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe(baseTopic + "config/maxHoursWithoutForcedVentilation/set", 1);
                 mqttClient.subscribe(baseTopic + "config/forcedVentilationMinutes/set", 1);
                 mqttClient.subscribe(baseTopic + "config/reset", 1);
+
+                mqttClient.subscribe(baseTopic + "sensor-outside/reference_temperature/set", 1);
                 Serial.println("command topics subscribed");
 
                 if (startupTime == NULL)
@@ -829,6 +855,12 @@ void mqttCallback(String &topic, String &payload)
         {
             resetConfig();
         }
+    }
+    else if(topic.equals(baseTopic + "sensor-outside/reference_temperature/set"))
+    {
+        setOutsideReferenceTemperature(payload.toFloat());
+        Serial.print("Reference temperature set to ");
+        Serial.println(payload);
     }
     else
     {
