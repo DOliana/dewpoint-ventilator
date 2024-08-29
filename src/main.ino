@@ -61,9 +61,10 @@ bool isOutsideSensorHeaterOn = false;                              // flag to ke
 float lastHumidityOutside = 0;                                     // last humidity value of the outdoor sensor - used to average the values
 float outsideSensorReferenceTemperature = 0;                       // reference temperature for the outdoor sensor
 long unsigned lastTimeSensorOutsideReferenceTemperature = 0;       // last time the reference temperature was set
+float referenceTempDifferenceThreshold = -2;                       // difference between the reference temperature and the outside temperature at which the reference temperature is used
 
 // config map to track changes
-bool configChangedMap[13] = {true, true, true, true, true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
+bool configChangedMap[14] = {true, true, true, true, true, true, true, true, true, true, true, true, true, true}; // used to keep track of whether the configuration has changed since the last loop - initialize to true to send the config on first loop
 #define CONFIG_IDX_MODE 0
 #define CONFIG_IDX_MIN_DELTA 1
 #define CONFIG_IDX_HYSTERESIS 2
@@ -77,6 +78,7 @@ bool configChangedMap[13] = {true, true, true, true, true, true, true, true, tru
 #define CONFIG_IDX_CORRECTION_TEMP_OUTSIDE 10
 #define CONFIG_IDX_CORRECTION_HUMIDITY_INSIDE 11
 #define CONFIG_IDX_CORRECTION_HUMIDITY_OUTSIDE 12
+#define CONFIG_IDX_REFERENCE_TEMP_DIFFERENCE_THRESHOLD 13
 
 const float HEATER_HUMIDITY_THRESHOLD = 75;
 const unsigned long HEATER_COOLDOWN_DELAY = 1000L;
@@ -403,16 +405,16 @@ SensorValues getSensorValues()
 
     SensorValues result = {0, 0, 0, 0, true, ""};
 
-    result.humidi
-    tyInside = dhtInside.readHumidity() + correction_humidity_inside;
+    result.humidityInside = dhtInside.readHumidity() + correction_humidity_inside;
     result.tempInside = dhtInside.readTemperature() + correction_temp_inside;
     sensorOutside.read(); // Read outdoor sensor
     result.humidityOutside = sensorOutside.getHumidity() + correction_humidity_outside;
     result.tempOutside = sensorOutside.getTemperature() + correction_temp_outside;
     float outsideReferenceTemperature = getSensorOutsideReferenceTemperature();
     // if the reference temperature is higher than the outside temperature, use the reference temperature (only check for higher temperatures, since only that is caused by the sun shining on the sensor)
-    if (outsideReferenceTemperature != 0 && outsideReferenceTemperature - result.tempOutside < -1)
+    if (outsideReferenceTemperature != 0 && outsideReferenceTemperature - result.tempOutside < referenceTempDifferenceThreshold)
     {
+        outsideReferenceTemperature = outsideReferenceTemperature - referenceTempDifferenceThreshold; // subtract the threshold to prevent base sensor differences from being added
         mqttClient.publish(baseTopic + "log/message", "using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside), false, 1);
         Serial.println("-> using reference temp " + String(outsideReferenceTemperature) + " instead of " + String(result.tempOutside));
         result.tempOutside = outsideReferenceTemperature;
@@ -864,6 +866,14 @@ void mqttCallback(String &topic, String &payload)
         Serial.print("ventilation_override_minutes set to ");
         Serial.println(ventilation_override_minutes);
     }
+    else if (topic.equals(baseTopic + "config/reference_temp_diff_threshold/set"))
+    {
+        referenceTempDifferenceThreshold = payload.toFloat();
+        configChangedMap[CONFIG_IDX_REFERENCE_TEMP_DIFFERENCE_THRESHOLD] = true;
+        saveConfig();
+        Serial.print("reference_temp_diff_threshold set to ");
+        Serial.println(referenceTempDifferenceThreshold);
+    }
     else if (topic.equals(baseTopic + "config/reset"))
     {
         if (payload == "true" or payload == "1")
@@ -925,6 +935,7 @@ void publishConfigIfChanged()
     publishConfigValueIfChanged(CONFIG_IDX_CORRECTION_TEMP_OUTSIDE, "correction_temp_outside", String(correction_temp_outside));
     publishConfigValueIfChanged(CONFIG_IDX_CORRECTION_HUMIDITY_INSIDE, "correction_humidity_inside", String(correction_humidity_inside));
     publishConfigValueIfChanged(CONFIG_IDX_CORRECTION_HUMIDITY_OUTSIDE, "correction_humidity_outside", String(correction_humidity_outside));
+    publishConfigValueIfChanged(CONFIG_IDX_REFERENCE_TEMP_DIFFERENCE_THRESHOLD, "reference_temp_diff_threshold", String(referenceTempDifferenceThreshold));
 }
 
 /**
@@ -1031,6 +1042,7 @@ bool saveConfig()
     doc["correction_temp_outside"] = correction_temp_outside;
     doc["correction_humidity_inside"] = correction_humidity_inside;
     doc["correction_humidity_outside"] = correction_humidity_outside;
+    doc["reference_temp_diff_threshold"] = referenceTempDifferenceThreshold;
 
     // Open file for writing
     File configFile = LittleFS.open("/config.json", "w");
@@ -1099,6 +1111,8 @@ bool loadConfig()
         correction_humidity_inside = doc["correction_humidity_inside"].as<float>();
     if (doc.containsKey("correction_humidity_outside"))
         correction_humidity_outside = doc["correction_humidity_outside"].as<float>();
+    if (doc.containsKey("reference_temp_diff_threshold"))
+        referenceTempDifferenceThreshold = doc["reference_temp_diff_threshold"].as<float>();
 
     configFile.close();
     Serial.println("Config loaded from file:");
@@ -1115,6 +1129,7 @@ bool loadConfig()
     Serial.println("- correction_temp_outside: " + String(correction_temp_outside));
     Serial.println("- correction_humidity_inside: " + String(correction_humidity_inside));
     Serial.println("- correction_humidity_outside: " + String(correction_humidity_outside));
+    Serial.println("- reference_temp_diff_threshold: " + String(referenceTempDifferenceThreshold));
 
     return true;
 }
@@ -1139,6 +1154,7 @@ void resetConfig()
     correction_temp_outside = CORRECTION_TEMP_OUTSIDE;
     correction_humidity_inside = CORRECTION_HUMIDITY_INSIDE;
     correction_humidity_outside = CORRECTION_HUMIDITY_OUTSIDE;
+    referenceTempDifferenceThreshold = REFERENCE_TEMPERATURE_DIFFERENCE_THRESHOLD;
     Serial.println("Config reset to default values");
     // mark all config values as changed
     for (size_t i = 0; i < sizeof(configChangedMap); i++)
