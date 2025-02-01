@@ -87,7 +87,8 @@ All config values can be changed by appending `set` to the topic.
 
 - `BASETOPIC/log/startup`: startup time in UTC (requires internet to get current time from ntp server)
 - `BASETOPIC/log/heartbeat`: heartbeat timestamp in UTC - sent every 10 seconds
-- `BASETOPIC/log/ventilatorStatusReason`: Reason as string for the current state of the ventilator.
+- `BASETOPIC/log/message`: Reason as string for the current state of the ventilator.
+- `BASETOPIC/log/status`: can be `error` or `OK` - errors can disappear, but should be investigated in the long run
 
 ### special topics
 

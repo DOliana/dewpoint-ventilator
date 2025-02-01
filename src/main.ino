@@ -257,7 +257,8 @@ void calculateAndSetVentilatorStatus()
     {
         if (mqttClient.connected())
         {
-            mqttClient.publish(baseTopic + "log/status", "sensors show errors: " + sensorValues.errorReason, false, 1);
+            mqttClient.publish(baseTopic + "log/message", "sensors show errors: " + sensorValues.errorReason, false, 1);
+            mqttClient.publish(baseTopic + "log/status", "error", false, 1);
             Serial.println(F("Error message sent"));
             delay(500); // wait for message to be sent
         }
@@ -270,7 +271,8 @@ void calculateAndSetVentilatorStatus()
     {
         if (mqttClient.connected())
         {
-            mqttClient.publish(baseTopic + "log/status", "sensors OK", false, 1);
+            mqttClient.publish(baseTopic + "log/message", "sensors OK", false, 1);
+            mqttClient.publish(baseTopic + "log/status", "OK", false, 1);
         }
     }
 
