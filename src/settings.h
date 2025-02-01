@@ -9,10 +9,11 @@
 #define LED_BUILTIN_BLUE 2
 
 // ******* Correction values for individual sensor values ***********
-#define CORRECTION_TEMP_INSIDE 0      // correction value for indoor sensor temperature
-#define CORRECTION_TEMP_OUTSIDE 0     // correction value for outdoor sensor temperature
-#define CORRECTION_HUMIDITY_INSIDE 0  // correction value for indoor sensor humidity
-#define CORRECTION_HUMIDITY_OUTSIDE 0 // correction value for outdoor sensor humidity
+#define CORRECTION_TEMP_INSIDE 0                      // correction value for indoor sensor temperature
+#define CORRECTION_TEMP_OUTSIDE 0                     // correction value for outdoor sensor temperature
+#define CORRECTION_HUMIDITY_INSIDE 0                  // correction value for indoor sensor humidity
+#define CORRECTION_HUMIDITY_OUTSIDE 0                 // correction value for outdoor sensor humidity
+#define REFERENCE_TEMPERATURE_DIFFERENCE_THRESHOLD -2 // difference between the reference temperature and the outside temperature at which the reference temperature is used
 //*******************************************************************
 
 #define MIN_Delta 5.0                    // minimum dew point difference at which the relay switches
@@ -24,4 +25,5 @@
 #define MAX_HOURS_WITHOUT_VENTILATION 12 // after this time, the ventilator will be turned on for at least VENTILATION_OVERRIDE_TIME minutes
 #define VENTILATION_OVERRIDE_MINUTES 30  // amount of minutes to override the ventilation status
 
-#define TIME_SERVER "europe.pool.ntp.org" // NTP server
+#define TIME_SERVER "pool.ntp.org" // NTP server
+#define TIME_ZONE "CET-1CEST,M3.5.0,M10.5.0/3" // Timezone https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv

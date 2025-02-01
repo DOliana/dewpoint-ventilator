@@ -3,7 +3,6 @@
 #include "SHT85.h"       // for SHT30 sensor
 #include <ESP8266WiFi.h> // for WiFi
 #include <MQTT.h>        // for MQTT
-#include <NTPClient.h>   // for time sync
 #include <WiFiUdp.h>     // for time sync
 #include <secrets.h>     // for WiFi and MQTT secrets
 #include <settings.h>    // for settings
@@ -11,6 +10,7 @@
 #include "FS.h"          // for file system (config)
 #include <LittleFS.h>    // for file system (config)
 #include <iterator>      // for map
+#include <time.h>        // for time functions
 
 #define RELAIS_ON HIGH // define the relais on value
 #define RELAIS_OFF LOW // define the relais off value
@@ -92,7 +92,6 @@ WiFiClient wifiClient;
 MQTTClient mqttClient;
 
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, TIME_SERVER, 3600, 60000);
 
 DHT dhtInside(DHTPIN_INSIDE, DHTTYPE_INSIDE); // The indoor sensor is now addressed with dhtInside
 SHT31 sensorOutside(0x44);                    // The outdoor sensor is now addressed with sensorOutside
@@ -136,9 +135,10 @@ void setup()
 
     digitalWrite(LED_BUILTIN_RED, LOW); // Turn on LED to show we have power
 
-    Serial.begin(115200);  // Start serial communication
-    Wire.begin();          // Start I2C communication
-    Wire.setClock(100000); // Set I2C clock to 100kHz
+    Serial.begin(115200);               // Start serial communication
+    Wire.begin();                       // Start I2C communication
+    Wire.setClock(100000);              // Set I2C clock to 100kHz
+    configTime(TIME_ZONE, TIME_SERVER); // Set time zone and NTP server
 
     initializeWiFi(); // Initialize WiFi connection
 
@@ -173,6 +173,7 @@ void setup()
         resetConfig();
     }
 
+    ESP.wdtFeed(); // feed the watchdog
     Serial.println("Setup complete");
     Serial.println();
 }
@@ -198,6 +199,7 @@ void loop()
     }
     else if (millis() > maxMilliSecondsWithoutWiFi && millis() - lastTimeWiFiOK > maxMilliSecondsWithoutWiFi)
     {
+        Serial.println("Rebooting after " + String(maxMilliSecondsWithoutWiFi) + "ms without WiFi connection");
         ESP.restart();
     }
     else
@@ -238,8 +240,8 @@ void loop()
             stopSleeping = false;
             break;
         }
-        delay(1000);
         ESP.wdtFeed(); // feed the watchdog
+        delay(1000);
     }
 }
 
@@ -637,6 +639,7 @@ void initializeWiFi()
 #else
     Serial.println("WiFi not configured");
 #endif
+    ESP.wdtFeed(); // feed the watchdog
 }
 
 /**
@@ -650,6 +653,7 @@ void initializeWiFi()
 void onWiFiConnect(const WiFiEventStationModeGotIP &event)
 {
     Serial.println("Connected to Wi-Fi sucessfully.");
+    ESP.wdtFeed();       // feed the watchdog
     stopSleeping = true; // stop sleeping if WiFi is connected to process MQTT commands immediately.
 }
 
@@ -706,15 +710,17 @@ void connectMQTTIfDisconnected()
                 mqttClient.subscribe(baseTopic + "config/forcedVentilationMinutes/set", 1);
                 mqttClient.subscribe(baseTopic + "config/reset", 1);
 
-                mqttClient.subscribe(baseTopic + "sensor-outside/reference_temperature/set", 1);
+                mqttClient.subscribe(baseTopic + "sensor-outside/reference_temperature/set", 0);
                 Serial.println("command topics subscribed");
 
                 if (startupTime == NULL)
                 {
-                    if (connectNTPClient())
+                    startupTime = getTimeString();
+                    // if startuptime starts with 1970, we have not set the time yet
+                    if (startupTime.startsWith("1970"))
                     {
-                        startupTime = getTimeString();
-
+                        startupTime = NULL;
+                    } else {
                         Serial.print(F("Startup time: "));
                         Serial.println(startupTime);
                         mqttClient.publish(baseTopic + "log/startup", startupTime, true, 1);
@@ -941,42 +947,6 @@ void publishConfigIfChanged()
 }
 
 /**
- * This function connects to the NTP server and updates the time.
- * It returns true if the time was successfully updated, false otherwise.
- */
-bool connectNTPClient()
-{
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.println(F("Connecting to NTP server..."));
-        timeClient.begin();
-        int retries = 0;
-        while (!timeClient.update() && retries < 10)
-        {
-            timeClient.forceUpdate();
-            retries++;
-            delay(500);
-        }
-
-        // if time was successfully updated, return true
-        if (retries < 10)
-        {
-            Serial.println(F("NTP time updated"));
-            return true;
-        }
-        else
-        {
-            Serial.println(F("NTP time update failed"));
-            return false;
-        }
-    }
-    else
-    {
-        return false;
-    }
-}
-
-/**
  * @brief Blinks the built-in blue LED for a given amount of time.
  *
  * This function blinks the built-in blue LED on the ESP board for a given amount of time.
@@ -1007,19 +977,20 @@ void sleepAndBlink(int sleepTimeMS)
 String getTimeString()
 {
     String timeString;
-    time_t epochTime = timeClient.getEpochTime();
-    struct tm *ptm = gmtime((time_t *)&epochTime);
-
-    int day = ptm->tm_mday;
-    int month = ptm->tm_mon + 1;
-    int year = ptm->tm_year + 1900;
-    int hour = ptm->tm_hour;
-    int minute = ptm->tm_min;
-    int second = ptm->tm_sec;
+    time_t epochTime = time(&epochTime);
+    struct tm tm;
+    localtime_r(&epochTime, &tm);
+    int day = tm.tm_mday;
+    int month = tm.tm_mon + 1;
+    int year = tm.tm_year + 1900;
+    int hour = tm.tm_hour;
+    int minute = tm.tm_min;
+    int second = tm.tm_sec;
 
     char buffer[20];
     sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second);
     timeString = String(buffer);
+
     return timeString;
 }
 
@@ -1087,33 +1058,33 @@ bool loadConfig()
         return false;
     }
 
-    if (doc.containsKey("mode"))
+    if (doc["mode"].is<String>())
         requestedMode = doc["mode"].as<String>();
-    if (doc.containsKey("deltaDPmin"))
+    if (doc["deltaDPmin"].is<int>())
         min_delta = doc["deltaDPmin"].as<int>();
-    if (doc.containsKey("hysteresis"))
+    if (doc["hysteresis"].is<int>())
         hysteresis = doc["hysteresis"].as<int>();
-    if (doc.containsKey("tempInside_min"))
+    if (doc["tempInside_min"].is<int>())
         tempInside_min = doc["tempInside_min"].as<int>();
-    if (doc.containsKey("tempOutside_min"))
+    if (doc["tempOutside_min"].is<int>())
         tempOutside_min = doc["tempOutside_min"].as<int>();
-    if (doc.containsKey("tempOutside_max"))
+    if (doc["tempOutside_max"].is<int>())
         tempOutside_max = doc["tempOutside_max"].as<int>();
-    if (doc.containsKey("min_humidity_for_override"))
+    if (doc["min_humidity_for_override"].is<int>())
         min_humidity_for_override = doc["min_humidity_for_override"].as<int>();
-    if (doc.containsKey("max_hours_without_ventilation"))
+    if (doc["max_hours_without_ventilation"].is<int>())
         max_hours_without_ventilation = doc["max_hours_without_ventilation"].as<int>();
-    if (doc.containsKey("ventilation_override_minutes"))
+    if (doc["ventilation_override_minutes"].is<int>())
         ventilation_override_minutes = doc["ventilation_override_minutes"].as<int>();
-    if (doc.containsKey("correction_temp_inside"))
+    if (doc["correction_temp_inside"].is<float>())
         correction_temp_inside = doc["correction_temp_inside"].as<float>();
-    if (doc.containsKey("correction_temp_outside"))
+    if (doc["correction_temp_outside"].is<float>())
         correction_temp_outside = doc["correction_temp_outside"].as<float>();
-    if (doc.containsKey("correction_humidity_inside"))
+    if (doc["correction_humidity_inside"].is<float>())
         correction_humidity_inside = doc["correction_humidity_inside"].as<float>();
-    if (doc.containsKey("correction_humidity_outside"))
+    if (doc["correction_humidity_outside"].is<float>())
         correction_humidity_outside = doc["correction_humidity_outside"].as<float>();
-    if (doc.containsKey("reference_temp_diff_threshold"))
+    if (doc["reference_temp_diff_threshold"].is<float>())
         referenceTempDifferenceThreshold = doc["reference_temp_diff_threshold"].as<float>();
 
     configFile.close();
