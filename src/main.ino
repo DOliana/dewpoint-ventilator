@@ -81,6 +81,7 @@ bool configChangedMap[14] = {true, true, true, true, true, true, true, true, tru
 #define CONFIG_IDX_REFERENCE_TEMP_DIFFERENCE_THRESHOLD 13
 
 const float HEATER_HUMIDITY_THRESHOLD = 75;
+const float HEATER_TEMPERATURE_THRESHOLD = 3;
 const unsigned long HEATER_COOLDOWN_DELAY = 1000L;
 const unsigned long MAX_HEATER_RUNTIME = 300000UL;
 
@@ -467,7 +468,7 @@ SensorValues getSensorValues()
 
     // if the humidity outside is above 75% and the heater has not been on for the last 5 minutes, turn on the heater.
     // The heater should not run more than 3 minutes and cool down for at least 3 minutes between runs
-    if (result.sensorsOK && result.humidityOutside > HEATER_HUMIDITY_THRESHOLD && lastTimeHeaterOn < (unsigned long)(millis() - min(millis(), MAX_HEATER_RUNTIME)))
+    if (result.sensorsOK && (result.humidityOutside > HEATER_HUMIDITY_THRESHOLD || result.tempOutside < HEATER_TEMPERATURE_THRESHOLD) && lastTimeHeaterOn < (unsigned long)(millis() - min(millis(), MAX_HEATER_RUNTIME)))
     {
         Serial.println("Current millis: " + String(millis()) + ", Last time heater on: " + String(lastTimeHeaterOn));
         setSensorOutsideHeaterMode(true);
